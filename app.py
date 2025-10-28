@@ -346,16 +346,16 @@ def send_main_menu(to, language='english'):
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "🌊 رحلات السندباد"
+                "text": "🌊 رحلات السندباد"  # 15 chars
             },
             "body": {
-                "text": "اختر من الخيارات:"
+                "text": "اختر من الخيارات:"  # 15 chars
             },
             "action": {
-                "button": "عرض الخيارات",
+                "button": "عرض الخيارات",  # 11 chars
                 "sections": [
                     {
-                        "title": "الخدمات الرئيسية",
+                        "title": "الخدمات",  # SHORTENED: 7 chars (was "الخدمات الرئيسية" - 16 chars)
                         "rows": [
                             {
                                 "id": "book_cruise_ar",
@@ -403,16 +403,16 @@ Please choose from the menu:"""
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "🌊 Sindbad Cruises"
+                "text": "🌊 Sindbad Cruises"  # 17 chars
             },
             "body": {
-                "text": "Choose from options:"
+                "text": "Choose from options:"  # 20 chars
             },
             "action": {
-                "button": "View Options",
+                "button": "View Options",  # 12 chars
                 "sections": [
                     {
-                        "title": "Main Services",
+                        "title": "Services",  # SHORTENED: 8 chars (was "Main Services" - 12 chars)
                         "rows": [
                             {
                                 "id": "book_cruise",
@@ -588,15 +588,15 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "اختر نوع الرحلة"
+                "text": "اختر الرحلة"  # SHORTENED: 9 chars (was "اختر نوع الرحلة" - 13 chars)
             },
             "body": {
                 "text": body_text
             },
             "action": {
-                "button": "اختر الرحلة",
+                "button": "اختر الرحلة",  # 9 chars
                 "sections": [{
-                    "title": "الرحلات المتاحة",
+                    "title": "الرحلات",  # SHORTENED: 6 chars (was "الرحلات المتاحة" - 13 chars)
                     "rows": rows
                 }]
             }
@@ -616,15 +616,15 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "Choose Cruise Type"
+                "text": "Choose Cruise"  # SHORTENED: 12 chars (was "Choose Cruise Type" - 17 chars)
             },
             "body": {
                 "text": body_text
             },
             "action": {
-                "button": "Select Cruise",
+                "button": "Select Cruise",  # 13 chars
                 "sections": [{
-                    "title": "Available Cruises",
+                    "title": "Cruises",  # SHORTENED: 7 chars (was "Available Cruises" - 16 chars)
                     "rows": rows
                 }]
             }
