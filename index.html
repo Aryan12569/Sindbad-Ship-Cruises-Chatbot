@@ -7,13 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <style>
         :root {
-            --primary: #0369a1;
-            --primary-dark: #0c4a6e;
-            --secondary: #0e7490;
+            --primary: #1e3a8a;
+            --primary-dark: #1e40af;
+            --secondary: #0ea5e9;
             --accent: #06b6d4;
         }
         
@@ -24,7 +22,7 @@
         
         .sidebar { 
             transition: all 0.3s ease;
-            background: linear-gradient(180deg, var(--primary-dark) 0%, var(--primary) 100%);
+            background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%);
         }
         
         .card-hover { 
@@ -70,7 +68,7 @@
         }
         
         .wave-bg {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z' fill='%230369a1' fill-opacity='0.1'%3E%3C/path%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z' fill='%231e3a8a' fill-opacity='0.1'%3E%3C/path%3E%3C/svg%3E");
             background-size: cover;
             background-position: bottom;
         }
@@ -126,6 +124,22 @@
             background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
             border-left: 4px solid #dc2626;
         }
+
+        .sindbad-gradient {
+            background: linear-gradient(135deg, #1e3a8a 0%, #0ea5e9 100%);
+        }
+
+        .ocean-wave {
+            background: linear-gradient(90deg, #1e3a8a, #0ea5e9, #06b6d4, #0ea5e9, #1e3a8a);
+            background-size: 400% 400%;
+            animation: wave 8s ease-in-out infinite;
+        }
+
+        @keyframes wave {
+            0% { background-position: 0% 50% }
+            50% { background-position: 100% 50% }
+            100% { background-position: 0% 50% }
+        }
     </style>
 </head>
 <body class="font-sans antialiased">
@@ -133,7 +147,7 @@
     <div id="loadingScreen" class="fixed inset-0 bg-white z-50 flex items-center justify-center transition-opacity duration-300">
         <div class="text-center">
             <div class="w-16 h-16 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p class="text-gray-600 loading-pulse">Loading Sindbad Dashboard...</p>
+            <p class="text-gray-600 loading-pulse">Loading Sindbad Ship Cruises Dashboard...</p>
         </div>
     </div>
 
@@ -194,71 +208,24 @@
                 <div class="flex space-x-3">
                     <input type="text" id="chatMessageInput" placeholder="Type your message..." 
                            class="flex-1 px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900">
-                    <button id="sendChatMessage" class="bg-blue-900 text-white px-6 py-3 rounded-xl hover:bg-opacity-90 transition-all">
+                    <button id="sendChatMessage" class="sindbad-gradient text-white px-6 py-3 rounded-xl hover:opacity-90 transition-all">
                         <i data-feather="send" class="w-4 h-4"></i>
                     </button>
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2">
-                    <button onclick="insertQuickMessage('Hello! How can I help you with your cruise booking?')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
+                    <button onclick="insertQuickMessage('Hello! How can I help you with your Sindbad cruise booking?')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
                         Quick Help
                     </button>
-                    <button onclick="insertQuickMessage('Can you please provide more details about your booking?')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
+                    <button onclick="insertQuickMessage('Can you please provide more details about your cruise booking?')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
                         More Details
                     </button>
-                    <button onclick="insertQuickMessage('Our team will contact you shortly about your cruise.')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
+                    <button onclick="insertQuickMessage('Our Sindbad team will contact you shortly about your cruise.')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
                         Team Contact
                     </button>
-                    <button onclick="insertQuickMessage('Thank you for choosing Sindbad Ship Cruises!')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
+                    <button onclick="insertQuickMessage('Thank you for choosing Sindbad Ship Cruises! 🌊')" class="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200">
                         Thank You
                     </button>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Report Modal -->
-    <div id="reportModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg">Generate Daily Report</h3>
-                <button onclick="hideReportModal()" class="text-gray-500 hover:text-gray-700">
-                    <i data-feather="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            <div class="mb-4">
-                <label class="block text-gray-700 mb-2 font-medium">Select Date</label>
-                <input type="date" id="reportDate" class="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900">
-            </div>
-            <div class="flex space-x-3">
-                <button onclick="hideReportModal()" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-400">
-                    Cancel
-                </button>
-                <button onclick="generateDailyReport()" class="flex-1 bg-blue-900 text-white py-3 rounded-xl font-medium hover:bg-opacity-90">
-                    Generate PDF
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Preview Modal -->
-    <div id="previewModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg">Message Preview</h3>
-                <button id="closePreview" class="text-gray-500 hover:text-gray-700">
-                    <i data-feather="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            <div class="bg-gray-100 rounded-lg p-4 mb-4">
-                <p id="previewContent" class="text-gray-800 whitespace-pre-wrap"></p>
-            </div>
-            <div class="flex space-x-3">
-                <button id="cancelSend" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-400">
-                    Cancel
-                </button>
-                <button id="confirmSend" class="flex-1 bg-blue-900 text-white py-3 rounded-xl font-medium hover:bg-opacity-90">
-                    Confirm & Send
-                </button>
             </div>
         </div>
     </div>
@@ -267,8 +234,8 @@
         <!-- Sidebar -->
         <div class="sidebar w-64 text-white flex flex-col shadow-xl">
             <div class="p-6 flex items-center space-x-3 border-b border-white border-opacity-20">
-                <div class="p-2 rounded-lg gradient-bg">
-                    <i data-feather="anchor" class="w-6 h-6"></i>
+                <div class="p-2 rounded-lg ocean-wave">
+                    <i data-feather="anchor" class="w-6 h-6 text-white"></i>
                 </div>
                 <div>
                     <span class="font-bold text-lg">Sindbad Cruises</span>
@@ -283,11 +250,11 @@
                 </a>
                 <a href="#" id="leadsLink" class="flex items-center space-x-3 p-3 rounded-xl hover:bg-white hover:bg-opacity-10 transition-all">
                     <i data-feather="users" class="w-5 h-5"></i>
-                    <span class="font-medium">Bookings Management</span>
+                    <span class="font-medium">Bookings</span>
                 </a>
                 <a href="#" id="capacityLink" class="flex items-center space-x-3 p-3 rounded-xl hover:bg-white hover:bg-opacity-10 transition-all">
                     <i data-feather="bar-chart-2" class="w-5 h-5"></i>
-                    <span class="font-medium">Capacity Monitor</span>
+                    <span class="font-medium">Capacity</span>
                 </a>
                 <a href="#" id="chatLink" class="flex items-center space-x-3 p-3 rounded-xl hover:bg-white hover:bg-opacity-10 transition-all">
                     <i data-feather="message-circle" class="w-5 h-5"></i>
@@ -299,7 +266,7 @@
                 </a>
                 <a href="#" id="reportsLink" class="flex items-center space-x-3 p-3 rounded-xl hover:bg-white hover:bg-opacity-10 transition-all">
                     <i data-feather="file-text" class="w-5 h-5"></i>
-                    <span class="font-medium">Daily Reports</span>
+                    <span class="font-medium">Reports</span>
                 </a>
             </nav>
             
@@ -321,14 +288,14 @@
             <header class="bg-white shadow-sm p-6 flex justify-between items-center border-b wave-bg">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800" id="pageTitle">Dashboard Overview</h1>
-                    <p class="text-gray-600" id="pageSubtitle">Sindbad Ship Cruises - Muscat, Oman</p>
+                    <p class="text-gray-600" id="pageSubtitle">Sindbad Ship Cruises - Luxury Sea Experiences</p>
                 </div>
                 <div class="flex items-center space-x-4">
                     <div class="flex items-center space-x-2 text-sm text-gray-600">
                         <i data-feather="clock" class="w-4 h-4"></i>
                         <span id="currentTime">--:--:--</span>
                     </div>
-                    <button id="refreshBtn" class="flex items-center space-x-2 bg-blue-900 text-white px-4 py-2 rounded-xl hover:bg-opacity-90 transition-all shadow-lg">
+                    <button id="refreshBtn" class="flex items-center space-x-2 sindbad-gradient text-white px-4 py-2 rounded-xl hover:opacity-90 transition-all shadow-lg">
                         <i data-feather="refresh-cw" class="w-4 h-4"></i>
                         <span>Refresh Data</span>
                     </button>
@@ -357,7 +324,7 @@
                         <div class="stats-card rounded-2xl shadow-lg p-6 card-hover">
                             <div class="flex justify-between items-start">
                                 <div>
-                                    <p class="text-gray-500 text-sm font-medium">Confirmed Bookings</p>
+                                    <p class="text-gray-500 text-sm font-medium">Confirmed</p>
                                     <h3 class="text-3xl font-bold text-gray-800 mt-2" id="confirmedBookings">0</h3>
                                     <p class="text-green-600 text-sm mt-1" id="confirmedPercentage">0%</p>
                                 </div>
@@ -383,7 +350,7 @@
                         <div class="stats-card rounded-2xl shadow-lg p-6 card-hover">
                             <div class="flex justify-between items-start">
                                 <div>
-                                    <p class="text-gray-500 text-sm font-medium">Active Sessions</p>
+                                    <p class="text-gray-500 text-sm font-medium">Active Chats</p>
                                     <h3 class="text-3xl font-bold text-gray-800 mt-2" id="activeSessions">0</h3>
                                     <p class="text-blue-600 text-sm mt-1" id="sessionsGrowth">+0 active</p>
                                 </div>
@@ -430,7 +397,7 @@
                     <div class="p-6 flex justify-between items-center border-b">
                         <div>
                             <h3 class="font-bold text-lg">Bookings Management</h3>
-                            <p class="text-gray-600 text-sm">Manage and track all cruise bookings</p>
+                            <p class="text-gray-600 text-sm">Manage and track all Sindbad cruise bookings</p>
                         </div>
                         <div class="flex space-x-3">
                             <div class="relative">
@@ -439,11 +406,7 @@
                             </div>
                             <button id="exportPDF" class="flex items-center space-x-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-xl hover:bg-blue-200 transition-all">
                                 <i data-feather="download" class="w-4 h-4"></i>
-                                <span>Export PDF</span>
-                            </button>
-                            <button onclick="showReportModal()" class="flex items-center space-x-2 bg-green-100 text-green-700 px-4 py-2 rounded-xl hover:bg-green-200 transition-all">
-                                <i data-feather="file-text" class="w-4 h-4"></i>
-                                <span>Daily Report</span>
+                                <span>Export CSV</span>
                             </button>
                         </div>
                     </div>
@@ -618,7 +581,7 @@
                                 <button id="previewBroadcast" class="flex-1 bg-gray-100 text-gray-700 py-3 px-6 rounded-xl font-medium hover:bg-gray-200 transition-all">
                                     Preview Message
                                 </button>
-                                <button id="sendBroadcastBtn" class="flex-1 gradient-bg text-white py-3 px-6 rounded-xl font-medium hover:opacity-90 transition-all shadow-lg">
+                                <button id="sendBroadcastBtn" class="flex-1 sindbad-gradient text-white py-3 px-6 rounded-xl font-medium hover:opacity-90 transition-all shadow-lg">
                                     Send Broadcast Message
                                 </button>
                             </div>
@@ -684,13 +647,13 @@
                 <!-- Daily Reports Section -->
                 <div class="bg-white rounded-2xl shadow-lg p-6" id="reportsSection" style="display:none;">
                     <h3 class="font-bold text-lg mb-2">Daily Reports</h3>
-                    <p class="text-gray-600 mb-6">Generate PDF reports for specific dates</p>
+                    <p class="text-gray-600 mb-6">Generate CSV reports for specific dates</p>
                     
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div class="space-y-6">
                             <div class="bg-blue-50 border border-blue-200 rounded-xl p-6">
                                 <h4 class="font-bold text-blue-800 mb-3">Generate Report</h4>
-                                <p class="text-blue-700 mb-4">Create a detailed PDF report for any date showing all confirmed bookings and revenue.</p>
+                                <p class="text-blue-700 mb-4">Create a detailed CSV report for any date showing all confirmed bookings and revenue.</p>
                                 
                                 <div class="space-y-4">
                                     <div>
@@ -698,9 +661,9 @@
                                         <input type="date" id="reportDateInput" class="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900">
                                     </div>
                                     
-                                    <button onclick="generateReport()" class="w-full gradient-bg text-white py-3 px-6 rounded-xl font-medium hover:opacity-90 transition-all shadow-lg flex items-center justify-center space-x-2">
+                                    <button onclick="generateReport()" class="w-full sindbad-gradient text-white py-3 px-6 rounded-xl font-medium hover:opacity-90 transition-all shadow-lg flex items-center justify-center space-x-2">
                                         <i data-feather="file-text" class="w-5 h-5"></i>
-                                        <span>Generate Daily Report PDF</span>
+                                        <span>Generate Daily Report CSV</span>
                                     </button>
                                 </div>
                             </div>
@@ -749,12 +712,12 @@
                                     </ul>
                                 </div>
                                 <div class="pt-4 border-t">
-                                    <p class="text-sm text-gray-600 mb-2">Best Practices:</p>
+                                    <p class="text-sm text-gray-600 mb-2">CSV Format Benefits:</p>
                                     <ul class="text-sm text-gray-600 space-y-1">
-                                        <li>• Generate reports 1 hour before each cruise</li>
-                                        <li>• Share with operations team</li>
-                                        <li>• Keep digital copies for records</li>
-                                        <li>• Review capacity trends weekly</li>
+                                        <li>• Opens in Excel, Google Sheets, Numbers</li>
+                                        <li>• Easy to filter and sort data</li>
+                                        <li>• Can be imported into other systems</li>
+                                        <li>• Smaller file size for quick sharing</li>
                                     </ul>
                                 </div>
                             </div>
@@ -911,13 +874,13 @@
                 // For now, we'll simulate it
                 appState.currentChatHistory = [
                     {
-                        message: "Hello! I'd like to book a cruise.",
+                        message: "Hello! I'd like to book a Sindbad cruise.",
                         sender: "user",
                         timestamp: new Date(Date.now() - 300000).toISOString(),
                         id: 1
                     },
                     {
-                        message: "Hello! I'd be happy to help you book a cruise. Which date are you interested in?",
+                        message: "Welcome to Sindbad Ship Cruises! I'd be happy to help you book a cruise. Which date are you interested in?",
                         sender: "admin", 
                         timestamp: new Date(Date.now() - 240000).toISOString(),
                         id: 2
@@ -1009,11 +972,11 @@
         }
 
         function startChatPolling(phoneNumber) {
-            if (appState.chatPollInterval) {
-                clearInterval(appState.chatPollInterval);
+            if (appState.chatPollingInterval) {
+                clearInterval(appState.chatPollingInterval);
             }
             
-            appState.chatPollInterval = setInterval(async () => {
+            appState.chatPollingInterval = setInterval(async () => {
                 if (appState.currentChatUser && appState.currentChatUser.phoneNumber === phoneNumber) {
                     // Poll for new messages
                     // This would call your backend in a real implementation
@@ -1022,9 +985,9 @@
         }
 
         function stopChatPolling() {
-            if (appState.chatPollInterval) {
-                clearInterval(appState.chatPollInterval);
-                appState.chatPollInterval = null;
+            if (appState.chatPollingInterval) {
+                clearInterval(appState.chatPollingInterval);
+                appState.chatPollingInterval = null;
             }
         }
 
@@ -1074,10 +1037,10 @@
                         </div>
                         <div class="text-sm text-gray-600 mb-3">
                             <p>Step: <span class="font-medium">${session.step.replace('awaiting_', '')}</span></p>
-                            ${session.tour_type !== 'Not selected' ? `<p>Tour: <span class="font-medium">${session.tour_type}</span></p>` : ''}
+                            ${session.tour_type !== 'Not selected' ? `<p>Cruise: <span class="font-medium">${session.tour_type}</span></p>` : ''}
                         </div>
                         <button onclick="openChat('${phone}', '${session.name || 'Customer'}')" 
-                                class="w-full bg-blue-900 text-white py-2 rounded-lg hover:bg-opacity-90 transition-all text-sm font-medium">
+                                class="w-full sindbad-gradient text-white py-2 rounded-lg hover:opacity-90 transition-all text-sm font-medium">
                             <i data-feather="message-circle" class="w-4 h-4 inline mr-1"></i>
                             Join Chat
                         </button>
@@ -1220,9 +1183,9 @@
         // Sample Messages
         function loadSampleMessage(type) {
             const messages = {
-                special_offer: `🌊 *Special Summer Offer!* ☀️
+                special_offer: `🌊 *Sindbad Ship Cruises - Special Offer!* ☀️
 
-Hello! Sindbad Ship Cruises has an exclusive summer promotion:
+Hello! Sindbad Ship Cruises has an exclusive promotion just for you:
 
 🎯 *Summer Specials:*
 • *15% OFF* all sunset cruises
@@ -1239,7 +1202,7 @@ Hello! Sindbad Ship Cruises has an exclusive summer promotion:
 
 Ready to make summer memories? Book now! 📞 +968 92734448`,
 
-                weather_update: `🌤️ *Weather Update for Your Cruise*
+                weather_update: `🌤️ *Sindbad Weather Update*
 
 Good news! The weather looks perfect for your scheduled cruise:
 
@@ -1253,15 +1216,15 @@ Good news! The weather looks perfect for your scheduled cruise:
 • Camera
 • Light jacket for the breeze
 
-We're looking forward to welcoming you aboard! 🚢`,
+We're looking forward to welcoming you aboard Sindbad! 🚢`,
 
-                reminder: `⏰ *Reminder: Your Cruise Tomorrow*
+                reminder: `⏰ *Sindbad Reminder: Your Cruise Tomorrow*
 
 Hello! This is a friendly reminder about your Sindbad Ship Cruises booking:
 
 📅 *Date:* Tomorrow
 🕒 *Reporting Time:* 1 hour before cruise
-📍 *Location:* ${CRUISE_CONFIG.contact.location}
+📍 *Location:* https://maps.app.goo.gl/woyVPSaZDSCG6UrWA
 
 Please remember to bring your booking confirmation and arrive 1 hour early.
 
@@ -1305,10 +1268,361 @@ We can't wait to welcome you aboard! 🌊`
             updateRecentBookings();
         }
 
-        // [Rest of the functions remain the same as in the previous complete version...]
-        // Including: updateRecentBookings, updateBookingsTable, updateCapacityDisplay, 
-        // updateReportsSection, generateReport, generateQuickReport, updateCharts,
-        // and all utility functions...
+        function updateRecentBookings() {
+            const recentBookingsContainer = document.getElementById('recentBookings');
+            const recentBookings = appState.bookings
+                .filter(b => b.bookingStatus === 'Confirmed')
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 5);
+            
+            if (recentBookings.length === 0) {
+                recentBookingsContainer.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i data-feather="users" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
+                        <p>No recent bookings</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            recentBookingsContainer.innerHTML = recentBookings.map(booking => `
+                <div class="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <i data-feather="user" class="w-5 h-5 text-blue-900"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-900">${booking.name}</p>
+                            <p class="text-sm text-gray-500">${booking.phone} • ${booking.cruiseType}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="inline-block px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+                            ${booking.totalGuests} guests
+                        </span>
+                        <p class="text-xs text-gray-500 mt-1">${booking.cruiseDate} • ${booking.totalAmount.toFixed(3)} OMR</p>
+                    </div>
+                </div>
+            `).join('');
+            
+            feather.replace();
+        }
+
+        // Bookings Table
+        function updateBookingsTable() {
+            const tableBody = document.getElementById('bookingsTableBody');
+            const paginationInfo = document.getElementById('bookingsPaginationInfo');
+            const paginationContainer = document.getElementById('bookingsPagination');
+            
+            if (appState.filteredBookings.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="px-6 py-4 text-center text-gray-500">
+                            No bookings found matching your search criteria.
+                        </td>
+                    </tr>
+                `;
+                paginationInfo.textContent = 'Showing 0 of 0 bookings';
+                paginationContainer.innerHTML = '';
+                return;
+            }
+            
+            const totalPages = Math.ceil(appState.filteredBookings.length / CONFIG.ITEMS_PER_PAGE);
+            const startIndex = (appState.currentPage - 1) * CONFIG.ITEMS_PER_PAGE;
+            const endIndex = startIndex + CONFIG.ITEMS_PER_PAGE;
+            const currentBookings = appState.filteredBookings.slice(startIndex, endIndex);
+            
+            tableBody.innerHTML = currentBookings.map(booking => {
+                const statusClass = booking.bookingStatus === 'Confirmed' ? 
+                    'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800';
+                
+                return `
+                <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        ${formatDate(booking.timestamp)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        ${booking.bookingId}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        ${booking.name}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${booking.phone}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${booking.cruiseType}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${booking.cruiseDate}<br>
+                        <span class="text-xs text-gray-400">${booking.cruiseTime}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${booking.totalGuests} total<br>
+                        <span class="text-xs text-gray-400">${booking.adults}A ${booking.children}C ${booking.infants}I</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        ${booking.totalAmount.toFixed(3)} OMR
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusClass}">
+                            ${booking.bookingStatus}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button onclick="openChat('${booking.whatsappId}', '${booking.name.replace(/'/g, "\\'")}')" 
+                                class="flex items-center space-x-1 sindbad-gradient text-white px-3 py-1 rounded-lg hover:opacity-90 transition-all text-xs font-medium">
+                            <i data-feather="message-circle" class="w-3 h-3"></i>
+                            <span>Chat</span>
+                        </button>
+                    </td>
+                </tr>
+            `}).join('');
+            
+            paginationInfo.textContent = `Showing ${startIndex + 1}-${Math.min(endIndex, appState.filteredBookings.length)} of ${appState.filteredBookings.length} bookings`;
+            updatePaginationButtons(totalPages, paginationContainer);
+            feather.replace();
+        }
+
+        // Capacity Monitoring
+        async function updateCapacityDisplay() {
+            const date = document.getElementById('capacityDate').value || new Date().toISOString().split('T')[0];
+            const capacityCards = document.getElementById('capacityCards');
+            
+            const cruiseTypes = [
+                { key: 'morning', name: 'Morning Cruise', time: '9:00 AM - 10:30 AM' },
+                { key: 'afternoon', name: 'Afternoon Cruise', time: '1:30 PM - 3:00 PM' },
+                { key: 'sunset', name: 'Sunset Cruise', time: '5:00 PM - 6:30 PM' },
+                { key: 'evening', name: 'Evening Cruise', time: '7:30 PM - 9:00 PM' }
+            ];
+
+            let cardsHTML = '';
+            
+            for (const cruise of cruiseTypes) {
+                try {
+                    const response = await fetch(`${CONFIG.API_BASE_URL}/api/capacity/${date}/${cruise.name}`);
+                    const capacityData = await response.json();
+                    
+                    const currentCapacity = capacityData.current_capacity || 0;
+                    const availableSeats = capacityData.available_seats || 0;
+                    const utilization = Math.round((currentCapacity / CONFIG.MAX_CAPACITY) * 100);
+                    
+                    let cardClass = 'stats-card rounded-2xl shadow-lg p-6 card-hover';
+                    if (utilization >= 90) {
+                        cardClass = 'capacity-full rounded-2xl shadow-lg p-6 card-hover';
+                    } else if (utilization >= 70) {
+                        cardClass = 'capacity-warning rounded-2xl shadow-lg p-6 card-hover';
+                    }
+                    
+                    cardsHTML += `
+                        <div class="${cardClass}">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <p class="text-gray-500 text-sm font-medium">${cruise.name}</p>
+                                    <p class="text-xs text-gray-400">${cruise.time}</p>
+                                </div>
+                                <div class="p-2 rounded-lg bg-blue-100">
+                                    <i data-feather="users" class="w-4 h-4 text-blue-900"></i>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600">Booked:</span>
+                                    <span class="font-medium">${currentCapacity} / ${CONFIG.MAX_CAPACITY}</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600">Available:</span>
+                                    <span class="font-medium ${availableSeats < 20 ? 'text-red-600' : 'text-green-600'}">${availableSeats} seats</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                         style="width: ${utilization}%"></div>
+                                </div>
+                                <div class="text-xs text-gray-500 text-center">${utilization}% utilized</div>
+                            </div>
+                        </div>
+                    `;
+                } catch (error) {
+                    console.error(`Error fetching capacity for ${cruise.name}:`, error);
+                }
+            }
+            
+            capacityCards.innerHTML = cardsHTML;
+            feather.replace();
+        }
+
+        // Reports Section
+        function updateReportsSection() {
+            const today = new Date().toISOString().split('T')[0];
+            const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+            
+            const todayBookings = appState.bookings.filter(b => 
+                b.cruiseDate === today && b.bookingStatus === 'Confirmed'
+            );
+            const tomorrowBookings = appState.bookings.filter(b => 
+                b.cruiseDate === tomorrow && b.bookingStatus === 'Confirmed'
+            );
+            
+            const weekStart = new Date();
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            const weekRevenue = appState.bookings
+                .filter(b => {
+                    const bookingDate = new Date(b.cruiseDate);
+                    return bookingDate >= weekStart && b.bookingStatus === 'Confirmed';
+                })
+                .reduce((sum, b) => sum + b.totalAmount, 0);
+            
+            document.getElementById('todayCount').textContent = todayBookings.length;
+            document.getElementById('tomorrowCount').textContent = tomorrowBookings.length;
+            document.getElementById('weekRevenue').textContent = weekRevenue.toFixed(3) + ' OMR';
+            document.getElementById('todayBookings').textContent = `${todayBookings.length} bookings`;
+            document.getElementById('tomorrowBookings').textContent = `${tomorrowBookings.length} bookings`;
+            
+            // Set default date for report generation to today
+            document.getElementById('reportDateInput').value = today;
+        }
+
+        async function generateReport() {
+            const date = document.getElementById('reportDateInput').value;
+            if (!date) {
+                showError('Date Required', 'Please select a date for the report');
+                return;
+            }
+            
+            try {
+                showLoading();
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/report/${date}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to generate report');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `Sindbad_Report_${date}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                showSuccess('Report Generated', `CSV report for ${date} downloaded successfully`);
+            } catch (error) {
+                console.error('Error generating report:', error);
+                showError('Report Failed', 'Could not generate CSV report');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function generateQuickReport(type) {
+            let date;
+            if (type === 'today') {
+                date = new Date().toISOString().split('T')[0];
+            } else if (type === 'tomorrow') {
+                date = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+            }
+            
+            document.getElementById('reportDateInput').value = date;
+            generateReport();
+        }
+
+        // Chart Functions
+        function updateCharts() {
+            updateCruiseTypeChart();
+            updateStatusChart();
+        }
+
+        function updateCruiseTypeChart() {
+            const ctx = document.getElementById('cruiseChart').getContext('2d');
+            const cruiseTypes = {};
+            
+            appState.bookings.forEach(booking => {
+                if (booking.bookingStatus === 'Confirmed') {
+                    const type = booking.cruiseType || 'Not specified';
+                    cruiseTypes[type] = (cruiseTypes[type] || 0) + 1;
+                }
+            });
+
+            if (window.cruiseChartInstance) {
+                window.cruiseChartInstance.destroy();
+            }
+
+            window.cruiseChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(cruiseTypes),
+                    datasets: [{
+                        data: Object.values(cruiseTypes),
+                        backgroundColor: [
+                            '#1e3a8a', '#0ea5e9', '#38bdf8', '#7dd3fc',
+                            '#0d9488', '#10b981', '#34d399', '#6ee7b7'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateStatusChart() {
+            const ctx = document.getElementById('statusChart').getContext('2d');
+            const statusCounts = {
+                'Confirmed': 0,
+                'Pending': 0,
+                'Cancelled': 0
+            };
+            
+            appState.bookings.forEach(booking => {
+                const status = booking.bookingStatus || 'Pending';
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+            });
+
+            if (window.statusChartInstance) {
+                window.statusChartInstance.destroy();
+            }
+
+            window.statusChartInstance = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(statusCounts),
+                    datasets: [{
+                        data: Object.values(statusCounts),
+                        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         // Utility Functions
         function formatDate(dateString) {
@@ -1403,12 +1717,12 @@ We can't wait to welcome you aboard! 🌊`
             };
             
             const subtitles = {
-                dashboard: 'Sindbad Ship Cruises - Muscat, Oman',
-                leads: 'Manage and track all cruise bookings',
+                dashboard: 'Sindbad Ship Cruises - Luxury Sea Experiences',
+                leads: 'Manage and track all Sindbad cruise bookings',
                 capacity: 'Real-time cruise capacity tracking',
                 chat: 'Monitor and interact with active customer conversations',
                 broadcast: 'Send targeted messages to your audience',
-                reports: 'Generate PDF reports for specific dates'
+                reports: 'Generate CSV reports for specific dates'
             };
             
             document.getElementById('pageTitle').textContent = titles[section] || 'Dashboard';
@@ -1468,16 +1782,12 @@ We can't wait to welcome you aboard! 🌊`
             }
             
             // PDF Export
-            document.getElementById('exportPDF').addEventListener('click', exportToPDF);
+            document.getElementById('exportPDF').addEventListener('click', exportToCSV);
             
             // Broadcast functionality
             document.getElementById('segmentSelect').addEventListener('change', updateRecipientCount);
             document.getElementById('broadcastMessage').addEventListener('input', updateCharCount);
             document.getElementById('sendBroadcastBtn').addEventListener('click', sendBroadcast);
-            document.getElementById('previewBroadcast').addEventListener('click', showPreview);
-            document.getElementById('closePreview').addEventListener('click', hidePreview);
-            document.getElementById('cancelSend').addEventListener('click', hidePreview);
-            document.getElementById('confirmSend').addEventListener('click', confirmSend);
             
             // Chat functionality
             document.getElementById('closeChat').addEventListener('click', closeChat);
@@ -1492,18 +1802,107 @@ We can't wait to welcome you aboard! 🌊`
             }
         }
 
+        function searchBookings() {
+            const query = document.getElementById('searchBookings').value.toLowerCase();
+            appState.searchQuery = query;
+            appState.currentPage = 1;
+            
+            if (!query) {
+                appState.filteredBookings = [...appState.bookings];
+            } else {
+                appState.filteredBookings = appState.bookings.filter(booking => 
+                    (booking.name && booking.name.toLowerCase().includes(query)) ||
+                    (booking.phone && booking.phone.toLowerCase().includes(query)) ||
+                    (booking.bookingId && booking.bookingId.toLowerCase().includes(query)) ||
+                    (booking.cruiseType && booking.cruiseType.toLowerCase().includes(query))
+                );
+            }
+            
+            updateBookingsTable();
+        }
+
+        function updatePaginationButtons(totalPages, container) {
+            let buttons = '';
+            
+            buttons += `
+                <button onclick="changePage(${appState.currentPage - 1})" 
+                        ${appState.currentPage === 1 ? 'disabled' : ''}
+                        class="px-3 py-1 rounded-lg border ${appState.currentPage === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-gray-50'}">
+                    Previous
+                </button>
+            `;
+            
+            for (let i = 1; i <= totalPages; i++) {
+                buttons += `
+                    <button onclick="changePage(${i})" 
+                            class="px-3 py-1 rounded-lg border ${appState.currentPage === i ? 'sindbad-gradient text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}">
+                        ${i}
+                    </button>
+                `;
+            }
+            
+            buttons += `
+                <button onclick="changePage(${appState.currentPage + 1})" 
+                        ${appState.currentPage === totalPages ? 'disabled' : ''}
+                        class="px-3 py-1 rounded-lg border ${appState.currentPage === totalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-gray-50'}">
+                    Next
+                </button>
+            `;
+            
+            container.innerHTML = buttons;
+        }
+
+        function changePage(page) {
+            const totalPages = Math.ceil(appState.filteredBookings.length / CONFIG.ITEMS_PER_PAGE);
+            if (page >= 1 && page <= totalPages) {
+                appState.currentPage = page;
+                updateBookingsTable();
+            }
+        }
+
+        function exportToCSV() {
+            // Create CSV content
+            let csvContent = "Sindbad Ship Cruises - Bookings Report\n";
+            csvContent += `Generated on: ${new Date().toLocaleDateString()}\n\n`;
+            
+            // Summary
+            const totalBookings = appState.bookings.length;
+            const confirmedBookings = appState.bookings.filter(b => b.bookingStatus === 'Confirmed').length;
+            const totalRevenue = appState.bookings
+                .filter(b => b.bookingStatus === 'Confirmed')
+                .reduce((sum, b) => sum + b.totalAmount, 0);
+            
+            csvContent += "Summary\n";
+            csvContent += `Total Bookings,${totalBookings}\n`;
+            csvContent += `Confirmed Bookings,${confirmedBookings}\n`;
+            csvContent += `Total Revenue,${totalRevenue.toFixed(3)} OMR\n\n`;
+            
+            // Headers
+            csvContent += "Booking ID,Name,Phone,Cruise Type,Date,Time,Guests,Amount,Status\n";
+            
+            // Data
+            appState.bookings.forEach(booking => {
+                csvContent += `"${booking.bookingId}","${booking.name}","${booking.phone}","${booking.cruiseType}","${booking.cruiseDate}","${booking.cruiseTime}",${booking.totalGuests},${booking.totalAmount.toFixed(3)} OMR,${booking.bookingStatus}\n`;
+            });
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `Sindbad-Bookings-${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }
+
         // Initialize when DOM is loaded
         document.addEventListener('DOMContentLoaded', function() {
             feather.replace();
             initApp();
         });
-
-        // Cruise configuration constant
-        const CRUISE_CONFIG = {
-            contact: {
-                location: "https://maps.app.goo.gl/woyVPSaZDSCG6UrWA"
-            }
-        };
     </script>
 </body>
 </html>
