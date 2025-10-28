@@ -303,16 +303,16 @@ def send_language_selection(to):
         "type": "list",
         "header": {
             "type": "text",
-            "text": "🌊 Sindbad Ship Cruises"
+            "text": "🌊 Sindbad Cruises"  # 17 chars
         },
         "body": {
             "text": ARABIC_MESSAGES["welcome"]
         },
         "action": {
-            "button": "🌐 Select Language",
+            "button": "🌐 Select Language",  # 18 chars
             "sections": [
                 {
-                    "title": "Choose Language / اختر اللغة",
+                    "title": "Language Options",  # SHORTENED: 15 chars (was "Choose Language / اختر اللغة" - 29 chars)
                     "rows": [
                         {
                             "id": "lang_english",
@@ -355,26 +355,26 @@ def send_main_menu(to, language='english'):
                 "button": "عرض الخيارات",  # 11 chars
                 "sections": [
                     {
-                        "title": "الخدمات",  # SHORTENED: 7 chars (was "الخدمات الرئيسية" - 16 chars)
+                        "title": "الخدمات",  # 7 chars (GOOD)
                         "rows": [
                             {
                                 "id": "book_cruise_ar",
-                                "title": "📅 حجز رحلة",
+                                "title": "📅 حجز رحلة",  # 9 chars
                                 "description": "احجز رحلتك البحرية"
                             },
                             {
                                 "id": "pricing_ar", 
-                                "title": "💰 الأسعار",
+                                "title": "💰 الأسعار",  # 8 chars
                                 "description": "أسعار الرحلات"
                             },
                             {
                                 "id": "schedule_ar",
-                                "title": "🕒 الجدول", 
+                                "title": "🕒 الجدول",  # 8 chars
                                 "description": "مواعيد الرحلات"
                             },
                             {
                                 "id": "contact_ar",
-                                "title": "📞 اتصل بنا",
+                                "title": "📞 اتصل بنا",  # 9 chars
                                 "description": "معلومات الاتصال"
                             }
                         ]
@@ -412,26 +412,26 @@ Please choose from the menu:"""
                 "button": "View Options",  # 12 chars
                 "sections": [
                     {
-                        "title": "Services",  # SHORTENED: 8 chars (was "Main Services" - 12 chars)
+                        "title": "Services",  # 8 chars (GOOD)
                         "rows": [
                             {
                                 "id": "book_cruise",
-                                "title": "📅 Book Cruise",
+                                "title": "📅 Book Cruise",  # 13 chars
                                 "description": "Book your sea cruise"
                             },
                             {
                                 "id": "pricing", 
-                                "title": "💰 Pricing",
+                                "title": "💰 Pricing",  # 9 chars
                                 "description": "Cruise prices"
                             },
                             {
                                 "id": "schedule",
-                                "title": "🕒 Schedule", 
+                                "title": "🕒 Schedule",  # 10 chars
                                 "description": "Cruise timings"
                             },
                             {
                                 "id": "contact",
-                                "title": "📞 Contact Us",
+                                "title": "📞 Contact Us",  # 12 chars
                                 "description": "Contact information"
                             }
                         ]
@@ -578,9 +578,11 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
         
         rows = []
         for cruise_key, cruise_info, available_seats in available_cruises:
+            # Ensure row titles are within limits
+            cruise_title = f"🕒 {cruise_info['name_ar']}"  # Should be under 24 chars
             rows.append({
                 "id": f"cruise_{cruise_key}",
-                "title": f"🕒 {cruise_info['name_ar']}",
+                "title": cruise_title,
                 "description": f"{cruise_info['time_ar']} - {available_seats} مقعد"
             })
         
@@ -588,7 +590,7 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "اختر الرحلة"  # SHORTENED: 9 chars (was "اختر نوع الرحلة" - 13 chars)
+                "text": "اختر الرحلة"  # 9 chars (GOOD)
             },
             "body": {
                 "text": body_text
@@ -596,7 +598,7 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             "action": {
                 "button": "اختر الرحلة",  # 9 chars
                 "sections": [{
-                    "title": "الرحلات",  # SHORTENED: 6 chars (was "الرحلات المتاحة" - 13 chars)
+                    "title": "الرحلات",  # 6 chars (GOOD)
                     "rows": rows
                 }]
             }
@@ -606,9 +608,11 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
         
         rows = []
         for cruise_key, cruise_info, available_seats in available_cruises:
+            # Ensure row titles are within limits
+            cruise_title = f"🕒 {cruise_info['name_en']}"  # Should be under 24 chars
             rows.append({
                 "id": f"cruise_{cruise_key}",
-                "title": f"🕒 {cruise_info['name_en']}",
+                "title": cruise_title,
                 "description": f"{cruise_info['time']} - {available_seats} seats"
             })
         
@@ -616,7 +620,7 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "Choose Cruise"  # SHORTENED: 12 chars (was "Choose Cruise Type" - 17 chars)
+                "text": "Choose Cruise"  # 12 chars (GOOD)
             },
             "body": {
                 "text": body_text
@@ -624,7 +628,7 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             "action": {
                 "button": "Select Cruise",  # 13 chars
                 "sections": [{
-                    "title": "Cruises",  # SHORTENED: 7 chars (was "Available Cruises" - 16 chars)
+                    "title": "Cruises",  # 7 chars (GOOD)
                     "rows": rows
                 }]
             }
