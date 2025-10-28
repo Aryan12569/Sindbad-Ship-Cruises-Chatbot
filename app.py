@@ -42,31 +42,47 @@ if missing_vars:
     logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 # Google Sheets setup
+sheet = None
 try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds_dict = json.loads(os.environ["GOOGLE_CREDS_JSON"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_key(GOOGLE_SHEET_ID).worksheet(SHEET_NAME)
+    
+    # Try to open the specific worksheet, create if it doesn't exist
+    try:
+        spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+        sheet = spreadsheet.worksheet(SHEET_NAME)
+        logger.info(f"✅ Found existing worksheet: {SHEET_NAME}")
+    except gspread.exceptions.WorksheetNotFound:
+        logger.info(f"📝 Worksheet '{SHEET_NAME}' not found, creating new one...")
+        sheet = spreadsheet.add_worksheet(title=SHEET_NAME, rows="1000", cols="20")
+        logger.info(f"✅ Created new worksheet: {SHEET_NAME}")
+    except Exception as e:
+        logger.error(f"❌ Error accessing worksheet: {str(e)}")
+        sheet = None
     
     # Ensure the sheet has the right columns
-    try:
-        current_headers = sheet.row_values(1)
-        required_headers = [
-            'Timestamp', 'Booking ID', 'Customer Name', 'Phone Number', 'WhatsApp ID',
-            'Cruise Date', 'Cruise Time', 'Cruise Type', 'Adults Count', 'Children Count', 
-            'Infants Count', 'Total Guests', 'Total Amount', 'Payment Status', 
-            'Payment Method', 'Transaction ID', 'Language', 'Booking Status', 'Notes'
-        ]
-        if current_headers != required_headers:
-            sheet.clear()
-            sheet.append_row(required_headers)
-            logger.info("✅ Updated Google Sheets headers")
-    except Exception as e:
-        logger.info("Setting up new sheet with required headers")
-        sheet.append_row(required_headers)
+    if sheet:
+        try:
+            current_headers = sheet.row_values(1)
+            required_headers = [
+                'Timestamp', 'Booking ID', 'Customer Name', 'Phone Number', 'WhatsApp ID',
+                'Cruise Date', 'Cruise Time', 'Cruise Type', 'Adults Count', 'Children Count', 
+                'Infants Count', 'Total Guests', 'Total Amount', 'Payment Status', 
+                'Payment Method', 'Transaction ID', 'Language', 'Booking Status', 'Notes'
+            ]
+            
+            if not current_headers or current_headers != required_headers:
+                if current_headers:
+                    sheet.clear()
+                sheet.append_row(required_headers)
+                logger.info("✅ Updated Google Sheets headers")
+        except Exception as e:
+            logger.error(f"❌ Error setting up headers: {str(e)}")
     
     logger.info("✅ Google Sheets initialized successfully")
+    
 except Exception as e:
     logger.error(f"❌ Google Sheets initialization failed: {str(e)}")
     sheet = None
@@ -166,29 +182,49 @@ def generate_booking_id():
     return f"SDB{int(time.time())}"
 
 def clean_oman_number(number):
-    """Clean and validate Oman phone numbers"""
+    """Clean and validate Oman phone numbers for WhatsApp API"""
     if not number:
         return None
     
-    # Remove all non-digit characters
+    # Remove all non-digit characters and any leading zeros
     clean_number = ''.join(filter(str.isdigit, str(number)))
     
     if not clean_number:
         return None
-        
-    # Handle Oman numbers specifically
-    if len(clean_number) == 8 and clean_number.startswith(('9', '7', '8')):
-        return '968' + clean_number
-    elif len(clean_number) == 11 and clean_number.startswith('968'):
-        return clean_number
-    elif len(clean_number) == 12 and clean_number.startswith('968'):
-        return clean_number
     
+    # Remove any leading zeros
+    clean_number = clean_number.lstrip('0')
+    
+    # Handle Oman numbers specifically for WhatsApp API
+    # WhatsApp requires international format without + or 00
+    if len(clean_number) == 8 and clean_number.startswith(('9', '7', '8')):
+        # For 8-digit Oman numbers, add country code (968)
+        return '968' + clean_number
+    elif len(clean_number) == 9 and clean_number.startswith('9'):
+        # For 9-digit numbers starting with 9
+        return '968' + clean_number
+    elif len(clean_number) == 12 and clean_number.startswith('968'):
+        # Already in correct format
+        return clean_number
+    elif len(clean_number) == 11 and clean_number.startswith('968'):
+        # Already in correct format
+        return clean_number
+    elif len(clean_number) == 10 and clean_number.startswith('79'):
+        # Handle numbers like 79XXXXXXX
+        return '968' + clean_number[1:]
+    elif len(clean_number) == 10 and clean_number.startswith('9'):
+        # Handle 10-digit numbers starting with 9
+        return '968' + clean_number
+    
+    logger.warning(f"⚠️ Unrecognized phone number format: {number} (cleaned: {clean_number})")
     return None
 
 def get_cruise_capacity(cruise_date, cruise_type):
     """Get current capacity for a specific cruise"""
     try:
+        if not sheet:
+            return 0
+            
         all_records = sheet.get_all_records()
         total_guests = 0
         
@@ -214,9 +250,10 @@ def send_whatsapp_message(to, message, interactive_data=None):
     try:
         clean_to = clean_oman_number(to)
         if not clean_to:
-            logger.error(f"❌ Invalid phone number: {to}")
+            logger.error(f"❌ Invalid phone number format: {to}")
             return False
         
+        # WhatsApp Business API URL
         url = f"https://graph.facebook.com/v17.0/{WHATSAPP_PHONE_ID}/messages"
         headers = {
             "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -248,7 +285,12 @@ def send_whatsapp_message(to, message, interactive_data=None):
             return True
         else:
             error_message = response_data.get('error', {}).get('message', 'Unknown error')
-            logger.error(f"❌ WhatsApp API error {response.status_code}: {error_message}")
+            error_code = response_data.get('error', {}).get('code', 'Unknown code')
+            logger.error(f"❌ WhatsApp API error {response.status_code} (Code: {error_code}): {error_message}")
+            
+            # Log the full error details for debugging
+            logger.error(f"🔍 Full error details: {response_data}")
+            
             return False
         
     except Exception as e:
@@ -288,7 +330,7 @@ def send_language_selection(to):
         }
     }
     
-    send_whatsapp_message(to, "", interactive_data)
+    return send_whatsapp_message(to, "", interactive_data)
 
 def send_main_menu(to, language='english'):
     """Send main menu based on language"""
@@ -398,7 +440,7 @@ Please choose from the menu:"""
             }
         }
     
-    send_whatsapp_message(to, message, interactive_data)
+    return send_whatsapp_message(to, message, interactive_data)
 
 def start_booking_flow(to, language='english'):
     """Start the booking flow"""
@@ -413,7 +455,7 @@ def start_booking_flow(to, language='english'):
     else:
         message = "📝 *Let's Book Your Cruise!* 🎫\n\nI'll help you book your sea cruise. 🚢\n\nFirst, please send me your:\n\n👤 *Full Name*\n\n*Example:*\nAhmed Al Harthy"
     
-    send_whatsapp_message(to, message)
+    return send_whatsapp_message(to, message)
 
 def ask_for_phone(to, name, language='english'):
     """Ask for phone number"""
@@ -427,7 +469,7 @@ def ask_for_phone(to, name, language='english'):
     else:
         message = f"Perfect, {name}! 👋\n\nNow please send me your:\n\n📞 *Phone Number*\n\n*Example:*\n91234567"
     
-    send_whatsapp_message(to, message)
+    return send_whatsapp_message(to, message)
 
 def ask_for_date(to, name, phone, language='english'):
     """Ask for cruise date"""
@@ -442,7 +484,7 @@ def ask_for_date(to, name, phone, language='english'):
     else:
         message = "📅 *Cruise Date*\n\nPlease send your *preferred date* for the cruise:\n\n📋 *Format Examples:*\n• **Tomorrow**\n• **October 29**\n• **Next Friday**\n• **15 November**\n• **2024-12-25**"
     
-    send_whatsapp_message(to, message)
+    return send_whatsapp_message(to, message)
 
 def ask_for_adults(to, name, phone, cruise_date, language='english'):
     """Ask for number of adults"""
@@ -458,7 +500,7 @@ def ask_for_adults(to, name, phone, cruise_date, language='english'):
     else:
         message = "👥 *Number of Adults*\n\nHow many *adults* (12 years and above) will be joining?\n\nPlease send the number:\n*Examples:* 2, 4, 6"
     
-    send_whatsapp_message(to, message)
+    return send_whatsapp_message(to, message)
 
 def ask_for_children(to, name, phone, cruise_date, adults_count, language='english'):
     """Ask for number of children"""
@@ -475,7 +517,7 @@ def ask_for_children(to, name, phone, cruise_date, adults_count, language='engli
     else:
         message = f"👶 *Number of Children*\n\nAdults: {adults_count}\n\nHow many *children* (2-11 years) will be joining?\n\nPlease send the number:\n*Examples:* 0, 1, 2"
     
-    send_whatsapp_message(to, message)
+    return send_whatsapp_message(to, message)
 
 def ask_for_infants(to, name, phone, cruise_date, adults_count, children_count, language='english'):
     """Ask for number of infants"""
@@ -493,7 +535,7 @@ def ask_for_infants(to, name, phone, cruise_date, adults_count, children_count, 
     else:
         message = f"🍼 *Number of Infants*\n\nAdults: {adults_count}\nChildren: {children_count}\n\nHow many *infants* (below 2 years) will be joining?\n\n*Note:* Infants are free\n\nPlease send the number:\n*Examples:* 0, 1, 2"
     
-    send_whatsapp_message(to, message)
+    return send_whatsapp_message(to, message)
 
 def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_count, infants_count, language='english'):
     """Ask for cruise type with capacity check"""
@@ -529,7 +571,7 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
         send_whatsapp_message(to, message)
         # Restart booking flow
         start_booking_flow(to, language)
-        return
+        return False
     
     if language == 'arabic':
         body_text = ARABIC_MESSAGES["ask_cruise_type"].format(total_guests, adults_count, children_count, infants_count)
@@ -588,7 +630,7 @@ def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_cou
             }
         }
     
-    send_whatsapp_message(to, "", interactive_data)
+    return send_whatsapp_message(to, "", interactive_data)
 
 def request_payment(to, booking_data, language='english'):
     """Request payment via WhatsApp Business"""
@@ -627,20 +669,21 @@ After payment, you'll receive booking confirmation automatically."""
 
     # For now, we'll simulate payment completion
     # In production, you'd integrate with WhatsApp Business Payment API
-    complete_booking(to, language)
-    
-    # Uncomment below when WhatsApp Payment API is integrated
-    # send_whatsapp_message(to, message)
+    return complete_booking(to, language)
 
 def complete_booking(to, language='english'):
     """Complete booking and save to sheet"""
     if to not in payment_sessions:
-        return
+        return False
     
     booking_data = payment_sessions[to]
     
     # Save to Google Sheets
     try:
+        if not sheet:
+            logger.error("❌ Cannot save booking - Google Sheets not available")
+            return False
+            
         timestamp = datetime.now().strftime("%Y-%m-%d %I:%M %p")
         cruise_info = CRUISE_CONFIG["cruise_types"][booking_data['cruise_type']]
         
@@ -671,6 +714,7 @@ def complete_booking(to, language='english'):
         
     except Exception as e:
         logger.error(f"❌ Failed to save booking: {str(e)}")
+        return False
     
     # Send confirmation message
     contact = CRUISE_CONFIG["contact"]
@@ -718,13 +762,15 @@ Thank you {booking_data['name']}! Your cruise has been booked successfully. 🚢
 
 We wish you a wonderful cruise experience! 🌊"""
     
-    send_whatsapp_message(to, message)
+    success = send_whatsapp_message(to, message)
     
     # Clear sessions
     if to in booking_sessions:
         del booking_sessions[to]
     if to in payment_sessions:
         del payment_sessions[to]
+    
+    return success
 
 def handle_interaction(interaction_id, phone_number):
     """Handle list interactions"""
@@ -733,17 +779,14 @@ def handle_interaction(interaction_id, phone_number):
     # Language selection
     if interaction_id == "lang_english":
         booking_sessions[phone_number] = {'language': 'english'}
-        send_main_menu(phone_number, 'english')
-        return True
+        return send_main_menu(phone_number, 'english')
     elif interaction_id == "lang_arabic":
         booking_sessions[phone_number] = {'language': 'arabic'}  
-        send_main_menu(phone_number, 'arabic')
-        return True
+        return send_main_menu(phone_number, 'arabic')
     
     # Main menu interactions
     if interaction_id == "book_cruise" or interaction_id == "book_cruise_ar":
-        start_booking_flow(phone_number, language)
-        return True
+        return start_booking_flow(phone_number, language)
     
     elif interaction_id.startswith("cruise_"):
         cruise_type = interaction_id.replace("cruise_", "")
@@ -751,8 +794,8 @@ def handle_interaction(interaction_id, phone_number):
             booking_data = booking_sessions[phone_number]
             booking_data['cruise_type'] = cruise_type
             booking_data['step'] = 'payment_pending'
-            request_payment(phone_number, booking_data, language)
-        return True
+            return request_payment(phone_number, booking_data, language)
+        return False
     
     # Info menu interactions
     elif interaction_id in ["pricing", "pricing_ar"]:
@@ -789,8 +832,7 @@ def handle_interaction(interaction_id, phone_number):
 
 *Note:* Infants below 2 years are free"""
         
-        send_whatsapp_message(phone_number, message)
-        return True
+        return send_whatsapp_message(phone_number, message)
     
     elif interaction_id in ["schedule", "schedule_ar"]:
         if language == 'arabic':
@@ -812,8 +854,7 @@ def handle_interaction(interaction_id, phone_number):
 
 ⏰ *Reporting Time:* 1 hour before cruise"""
         
-        send_whatsapp_message(phone_number, message)
-        return True
+        return send_whatsapp_message(phone_number, message)
     
     elif interaction_id in ["contact", "contact_ar"]:
         contact = CRUISE_CONFIG["contact"]
@@ -836,8 +877,7 @@ def handle_interaction(interaction_id, phone_number):
 
 ⏰ *Working Hours:* 8:00 AM - 10:00 PM"""
         
-        send_whatsapp_message(phone_number, message)
-        return True
+        return send_whatsapp_message(phone_number, message)
     
     return False
 
@@ -901,6 +941,9 @@ def get_capacity(date, cruise_type):
 def generate_report(date):
     """Generate CSV report for a specific date"""
     try:
+        if not sheet:
+            return jsonify({"error": "Google Sheets not configured"}), 500
+            
         all_records = sheet.get_all_records()
         
         # Filter bookings for the specific date with confirmed status
@@ -987,6 +1030,9 @@ def send_broadcast():
         if not message:
             return jsonify({"error": "Message is required"}), 400
         
+        if not sheet:
+            return jsonify({"error": "Google Sheets not configured"}), 500
+            
         all_records = sheet.get_all_records()
         recipients = []
         
@@ -1004,7 +1050,7 @@ def send_broadcast():
         # Remove duplicates
         recipients = list(set(recipients))
         
-        # Send messages (in production, you'd implement proper rate limiting)
+        # Send messages
         sent = 0
         failed = 0
         
