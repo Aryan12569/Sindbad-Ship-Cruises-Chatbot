@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from flask_cors import CORS
 import csv
 import io
+import traceback
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +23,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ==============================
-# CONFIGURATION - SINDABAD SHIP CRUISES
+# CONFIGURATION
 # ==============================
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "SINDBADCRUISE")
 WHATSAPP_TOKEN = os.environ.get("ACCESS_TOKEN")
@@ -39,57 +41,61 @@ if not os.environ.get("GOOGLE_CREDS_JSON"):
     missing_vars.append("GOOGLE_CREDS_JSON")
 
 if missing_vars:
-    logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+    logger.error(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
+    raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 # Google Sheets setup
 sheet = None
 try:
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/spreadsheets"
+    ]
+    
     creds_dict = json.loads(os.environ["GOOGLE_CREDS_JSON"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     
-    # Try to open the specific worksheet, create if it doesn't exist
+    # Open spreadsheet and worksheet
+    spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+    
     try:
-        spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
         sheet = spreadsheet.worksheet(SHEET_NAME)
         logger.info(f"✅ Found existing worksheet: {SHEET_NAME}")
     except gspread.exceptions.WorksheetNotFound:
-        logger.info(f"📝 Worksheet '{SHEET_NAME}' not found, creating new one...")
-        sheet = spreadsheet.add_worksheet(title=SHEET_NAME, rows="1000", cols="20")
+        logger.info(f"📝 Creating new worksheet: {SHEET_NAME}")
+        sheet = spreadsheet.add_worksheet(title=SHEET_NAME, rows="1000", cols="25")
         logger.info(f"✅ Created new worksheet: {SHEET_NAME}")
-    except Exception as e:
-        logger.error(f"❌ Error accessing worksheet: {str(e)}")
-        sheet = None
     
-    # Ensure the sheet has the right columns
-    if sheet:
-        try:
-            current_headers = sheet.row_values(1)
-            required_headers = [
-                'Timestamp', 'Booking ID', 'Customer Name', 'Phone Number', 'WhatsApp ID',
-                'Cruise Date', 'Cruise Time', 'Cruise Type', 'Adults Count', 'Children Count', 
-                'Infants Count', 'Total Guests', 'Total Amount', 'Payment Status', 
-                'Payment Method', 'Transaction ID', 'Language', 'Booking Status', 'Notes'
-            ]
-            
-            if not current_headers or current_headers != required_headers:
-                if current_headers:
-                    sheet.clear()
-                sheet.append_row(required_headers)
-                logger.info("✅ Updated Google Sheets headers")
-        except Exception as e:
-            logger.error(f"❌ Error setting up headers: {str(e)}")
+    # Setup headers - Updated for payment tracking
+    required_headers = [
+        'Timestamp', 'Booking ID', 'Customer Name', 'Phone Number', 'WhatsApp ID',
+        'Cruise Date', 'Cruise Time', 'Cruise Type', 'Adults Count', 'Children Count', 
+        'Infants Count', 'Total Guests', 'Total Amount', 'Payment Status', 
+        'Payment Method', 'Transaction ID', 'Payment Timestamp', 'Language', 
+        'Booking Status', 'Notes', 'Payment Receipt URL', 'Payment Currency'
+    ]
     
-    logger.info("✅ Google Sheets initialized successfully")
+    current_headers = sheet.row_values(1)
+    if not current_headers or current_headers != required_headers:
+        if current_headers:
+            sheet.clear()
+        sheet.append_row(required_headers)
+        logger.info("✅ Updated Google Sheets headers with payment fields")
+    
+    # Test connection
+    test_value = sheet.acell('A1').value
+    logger.info(f"✅ Google Sheets connected successfully. First header: {test_value}")
     
 except Exception as e:
     logger.error(f"❌ Google Sheets initialization failed: {str(e)}")
-    sheet = None
+    logger.error(traceback.format_exc())
+    raise RuntimeError("Google Sheets initialization failed") from e
 
-# Simple session management
-booking_sessions = {}
-payment_sessions = {}
+# Session management with timeout
+user_sessions = {}
+SESSION_TIMEOUT_MINUTES = 30
 
 # ==============================
 # CRUISE CONFIGURATION
@@ -141,36 +147,264 @@ CRUISE_CONFIG = {
         "email": "alsindbad.muscat@gmail.com",
         "website": "www.alsindbadmuscat.com"
     },
-    "reporting_time": "1 hour before cruise"
+    "reporting_time": "1 hour before cruise",
+    "currency": "OMR"  # Oman Omani Rial
 }
 
 # ==============================
-# ARABIC LANGUAGE SUPPORT
+# MESSAGES
 # ==============================
-ARABIC_MESSAGES = {
-    "welcome": "🌊 مرحباً بكم في رحلات السندباد البحرية!\n\nاختر لغتك المفضلة / Choose your preferred language:",
-    
-    "main_menu": "🌊 *رحلات السندباد البحرية* 🚢\n\n*مميزات الرحلة:*\n• 🛳️ رحلة بحرية فاخرة\n• ☕ مقهى على متن السفينة\n• 🌅 مناظر بحرية خلابة\n• 🎵 موسيقى وترفيه\n\n*معلومات الاتصال:*\n📞 {} | {}\n📍 {}\n📧 {}\n🌐 {}\n\nاختر من القائمة:",
-    
-    "booking_start": "📝 *لنحجز رحلتك!* 🎫\n\nسأساعدك في حجز رحلتك البحرية. 🚢\n\nأولاً، الرجاء إرسال:\n\n👤 *الاسم الكامل*\n\n*مثال:*\nأحمد الحارثي",
-    
-    "ask_phone": "ممتاز، {}! 👋\n\nالآن الرجاء إرسال:\n\n📞 *رقم الهاتف*\n\n*مثال:*\n91234567",
-    
-    "ask_date": "📅 *تاريخ الرحلة*\n\nالرجاء إرسال *التاريخ المفضل* للرحلة:\n\n📋 *أمثلة على التنسيق:*\n• **غداً**\n• **29 أكتوبر**\n• **الجمعة القادمة**\n• **15 نوفمبر**\n• **2024-12-25**",
-    
-    "ask_adults": "👥 *عدد البالغين*\n\nكم عدد *البالغين* (12 سنة فما فوق) الذين سينضمون؟\n\nالرجاء إرسال الرقم:\n*أمثلة:* 2, 4, 6",
-    
-    "ask_children": "👶 *عدد الأطفال*\n\nالبالغين: {}\n\nكم عدد *الأطفال* (2-11 سنة) الذين سينضمون؟\n\nالرجاء إرسال الرقم:\n*أمثلة:* 0, 1, 2",
-    
-    "ask_infants": "🍼 *عدد الرضع*\n\nالبالغين: {}\nالأطفال: {}\n\nكم عدد *الرضع* (أقل من سنتين) الذين سينضمون؟\n\n*ملاحظة:* الرضع مجاناً\n\nالرجاء إرسال الرقم:\n*أمثلة:* 0, 1, 2",
-    
-    "ask_cruise_type": "🕒 *نوع الرحلة*\n\n{} ضيوف إجمالاً:\n• {} بالغين\n• {} أطفال\n• {} رضع\n\nالرجاء اختيار نوع الرحلة:",
-    
-    "payment_instructions": "💳 *تعليمات الدفع*\n\n*المبلغ الإجمالي: {} ريال عماني*\n\nلإكمال الحجز، يرجى الدفع عبر:\n\n1. افتح تطبيق WhatsApp\n2. اضغط على أيقونة الدفع 💳\n3. اختر الدفع عبر WhatsApp\n4. أدخل المبلغ: {}\n5. أكمل عملية الدفع\n\nبعد الدفع، ستصلك تأكيدية الحجز تلقائياً.",
-    
-    "booking_complete": "🎉 *تم تأكيد الحجز!* ✅\n\nشكراً {}! تم حجز رحلتك بنجاح. 🚢\n\n📋 *تفاصيل الحجز:*\n🆔 رقم الحجز: {}\n👤 الاسم: {}\n📞 الهاتف: {}\n📅 التاريخ: {}\n🕒 الوقت: {}\n🚢 نوع الرحلة: {}\n👥 الضيوف: {} إجمالاً\n   • {} بالغين\n   • {} أطفال\n   • {} رضع\n💰 المبلغ: {} ريال عماني\n\n⏰ *وقت الحضور:* ساعة قبل الرحلة\n📍 *موقعنا:* {}\n📞 *للاستفسار:* {} | {}\n\nنتمنى لكم رحلة بحرية ممتعة! 🌊",
-    
-    "capacity_full": "❌ *عفواً، لا توجد أماكن متاحة*\n\nرحلة {} بتاريخ {} ممتلئة بالكامل ({} شخص).\n\nيرجى اختيار تاريخ آخر أو نوع رحلة مختلف."
+MESSAGES = {
+    "english": {
+        "welcome": "🌊 Welcome to Sindbad Ship Cruises!
+Choose your preferred language:",
+        "main_menu": """🌊 *Sindbad Ship Cruises* 🚢
+
+*Cruise Features:*
+• 🛳️ Luxury sea cruise
+• ☕ Cafe on board  
+• 🌅 Stunning sea views
+• 🎵 Music & entertainment
+
+Please choose from the menu:""",
+        "booking_start": "📝 *Let's Book Your Cruise!* 🎫
+I'll help you book your sea cruise. 🚢
+First, please send me your:
+👤 *Full Name*
+*Example:*
+Ahmed Al Harthy",
+        "ask_phone": "Perfect, {}! 👋
+Now please send me your:
+📞 *Phone Number*
+*Example:*
+91234567",
+        "ask_date": "📅 *Cruise Date*
+Please send your *preferred date* for the cruise:
+📋 *Format Examples:*
+• **Tomorrow**
+• **October 29**
+• **Next Friday**
+• **15 November**
+• **2024-12-25**",
+        "ask_adults": "👥 *Number of Adults*
+How many *adults* (12 years and above) will be joining?
+Please send the number:
+*Examples:* 2, 4, 6",
+        "ask_children": "👶 *Number of Children*
+Adults: {}
+How many *children* (2-11 years) will be joining?
+Please send the number:
+*Examples:* 0, 1, 2",
+        "ask_infants": "🍼 *Number of Infants*
+Adults: {}
+Children: {}
+How many *infants* (below 2 years) will be joining?
+*Note:* Infants are free
+Please send the number:
+*Examples:* 0, 1, 2",
+        "ask_cruise_type": "🕒 *Choose Cruise Type*
+{} total guests:
+• {} adults
+• {} children
+• {} infants
+Please choose your cruise:",
+        "payment_request": """💳 *Payment Required*
+
+*Total Amount: {} {}*
+
+To complete your booking, please confirm:
+
+Booking ID: {}
+
+Please choose payment method:""",
+        "payment_options": """💳 *Payment Options*
+
+You can pay using:
+1. 💳 WhatsApp Pay (Recommended - Instant confirmation)
+2. 💵 Bank Transfer
+3. 💳 Credit/Debit Card (via secure link)
+
+Please select your preferred method:""",
+        "payment_method_selected": "You selected: {}
+Please wait while we prepare your payment request...",
+        "payment_initiated": """✅ *Payment Initiated!*
+
+You'll receive a payment request via WhatsApp within 30 seconds.
+Please check your WhatsApp for the payment request from Sindbad Cruises.
+
+💡 *Note:* If you don't see it, please ensure WhatsApp Pay is enabled on your account.
+
+Your Booking ID: {}
+
+You can also pay manually via:
+• Bank Transfer: [Bank Details to be provided by agent]
+• Card Payment: [Secure payment link]
+
+We'll notify you once payment is confirmed.""",
+        "payment_confirmed": """🎉 *Payment Confirmed!* ✅
+
+Thank you {}! Your cruise has been booked successfully. 🚢
+
+📋 *Booking Details:*
+🆔 Booking ID: {}
+👤 Name: {}
+📞 Phone: {}
+📅 Date: {}
+🕒 Time: {}
+🚢 Cruise Type: {}
+👥 Guests: {} total
+   • {} adults
+   • {} children  
+   • {} infants
+💰 Amount: {} {}
+
+⏰ *Reporting Time:* 1 hour before cruise
+📍 *Location:* {}
+📞 *For inquiries:* {} | {}
+
+We wish you a wonderful cruise experience! 🌊""",
+        "payment_failed": """❌ *Payment Failed*
+
+We couldn't process your payment. Please try again or contact us directly.
+
+📞 Contact: {} | {}
+
+You can also pay via bank transfer:
+Bank: [Bank Name]
+Account: [Account Number]
+IBAN: [IBAN]
+
+Please send us proof of payment and your Booking ID: {}""",
+        "booking_cancelled": "❌ Booking cancelled. We welcome you anytime! 🌊",
+        "payment_timeout": "⏰ *Payment Timeout* - Your payment request expired. Please restart booking.",
+        "invalid_input": "❌ Invalid input. Please try again.",
+        "session_expired": "⏳ Your session has expired. Please start over by sending 'Hi'."
+    },
+    "arabic": {
+        "welcome": "🌊 مرحباً بكم في رحلات السندباد البحرية!
+اختر لغتك المفضلة:",
+        "main_menu": """🌊 *رحلات السندباد البحرية* 🚢
+
+*مميزات الرحلة:*
+• 🛳️ رحلة بحرية فاخرة
+• ☕ مقهى على متن السفينة
+• 🌅 مناظر بحرية خلابة
+• 🎵 موسيقى وترفيه
+
+اختر من القائمة:""",
+        "booking_start": "📝 *لنحجز رحلتك!* 🎫
+سأساعدك في حجز رحلتك البحرية. 🚢
+أولاً، الرجاء إرسال:
+👤 *الاسم الكامل*
+*مثال:*
+أحمد الحارثي",
+        "ask_phone": "ممتاز، {}! 👋
+الآن الرجاء إرسال:
+📞 *رقم الهاتف*
+*مثال:*
+91234567",
+        "ask_date": "📅 *تاريخ الرحلة*
+الرجاء إرسال *التاريخ المفضل* للرحلة:
+📋 *أمثلة على التنسيق:*
+• **غداً**
+• **29 أكتوبر**
+• **الجمعة القادمة**
+• **15 نوفمبر**
+• **2024-12-25**",
+        "ask_adults": "👥 *عدد البالغين*
+كم عدد *البالغين* (12 سنة فما فوق) الذين سينضمون؟
+الرجاء إرسال الرقم:
+*أمثلة:* 2, 4, 6",
+        "ask_children": "👶 *عدد الأطفال*
+البالغين: {}
+كم عدد *الأطفال* (2-11 سنة) الذين سينضمون؟
+الرجاء إرسال الرقم:
+*أمثلة:* 0, 1, 2",
+        "ask_infants": "🍼 *عدد الرضع*
+البالغين: {}
+الأطفال: {}
+كم عدد *الرضع* (أقل من سنتين) الذين سينضمون؟
+*ملاحظة:* الرضع مجاناً
+الرجاء إرسال الرقم:
+*أمثلة:* 0, 1, 2",
+        "ask_cruise_type": "🕒 *اختر نوع الرحلة*
+{} ضيوف إجمالاً:
+• {} بالغين
+• {} أطفال
+• {} رضع
+الرجاء اختيار الرحلة:",
+        "payment_request": """💳 *طلب الدفع*
+
+*المبلغ الإجمالي: {} {}*
+
+لإكمال الحجز، الرجاء التأكيد:
+
+رقم الحجز: {}
+
+الرجاء اختيار طريقة الدفع:""",
+        "payment_options": """💳 *خيارات الدفع*
+
+يمكنك الدفع باستخدام:
+1. 💳 دفع واتساب (مُوصى به - تأكيد فوري)
+2. 💵 التحويل البنكي
+3. 💳 بطاقة ائتمان/خصم (عبر رابط آمن)
+
+الرجاء اختيار الطريقة المفضلة:""",
+        "payment_method_selected": "لقد اخترت: {}
+يرجى الانتظار بينما نجهز طلب الدفع الخاص بك...",
+        "payment_initiated": """✅ *تم بدء الدفع!*
+
+ستتلقى طلب دفع عبر واتساب خلال 30 ثانية.
+الرجاء التحقق من واتساب الخاص بك لطلب الدفع من رحلات السندباد.
+
+💡 *ملاحظة:* إذا لم تره، تأكد من تفعيل دفع واتساب على حسابك.
+
+رقم حجزك: {}
+
+يمكنك أيضًا الدفع يدويًا عبر:
+• التحويل البنكي: [تفاصيل البنك لتُقدّم من قبل الموظف]
+• الدفع بالبطاقة: [رابط دفع آمن]
+
+سنُبلغك بمجرد تأكيد الدفع.""",
+        "payment_confirmed": """🎉 *تم تأكيد الدفع!* ✅
+
+شكراً {}! تم حجز رحلتك بنجاح. 🚢
+
+📋 *تفاصيل الحجز:*
+🆔 رقم الحجز: {}
+👤 الاسم: {}
+📞 الهاتف: {}
+📅 التاريخ: {}
+🕒 الوقت: {}
+🚢 نوع الرحلة: {}
+👥 الضيوف: {} إجمالاً
+   • {} بالغين
+   • {} أطفال
+   • {} رضع
+💰 المبلغ: {} {}
+
+⏰ *وقت الحضور:* ساعة قبل الرحلة
+📍 *موقعنا:* {}
+📞 *للاستفسار:* {} | {}
+
+نتمنى لكم رحلة بحرية ممتعة! 🌊""",
+        "payment_failed": """❌ *فشل الدفع*
+
+لم نتمكن من معالجة دفعك. يرجى المحاولة مرة أخرى أو التواصل معنا مباشرة.
+
+📞 للتواصل: {} | {}
+
+يمكنك أيضًا الدفع عبر التحويل البنكي:
+البنك: [اسم البنك]
+الحساب: [رقم الحساب]
+IBAN: [IBAN]
+
+يرجى إرسال إثبات الدفع ورقم حجزك: {}""",
+        "booking_cancelled": "❌ تم إلغاء الحجز. نرحب بك في أي وقت! 🌊",
+        "payment_timeout": "⏰ *انتهت مدة صلاحية الدفع* - انتهت مدة طلب الدفع الخاص بك. يرجى إعادة بدء الحجز.",
+        "invalid_input": "❌ إدخال غير صالح. يرجى المحاولة مرة أخرى.",
+        "session_expired": "⏳ انتهت جلستك. يرجى البدء من جديد بإرسال 'مرحبا'."
+    }
 }
 
 # ==============================
@@ -178,65 +412,56 @@ ARABIC_MESSAGES = {
 # ==============================
 
 def generate_booking_id():
-    """Generate unique booking ID"""
-    return f"SDB{int(time.time())}"
+    """Generate unique booking ID with timestamp"""
+    return f"SDB{int(time.time())}{uuid.uuid4().hex[:6].upper()}"
 
-def clean_oman_number(number):
-    """Clean and validate Oman phone numbers for WhatsApp API"""
+def clean_phone_number(number):
+    """Clean and validate phone numbers for WhatsApp API"""
     if not number:
         return None
     
-    # Remove all non-digit characters and any leading zeros
+    # Remove all non-digit characters
     clean_number = ''.join(filter(str.isdigit, str(number)))
     
-    if not clean_number:
-        return None
-    
-    # Remove any leading zeros
-    clean_number = clean_number.lstrip('0')
-    
-    # Handle Oman numbers specifically for WhatsApp API
-    # WhatsApp requires international format without + or 00
+    # Handle Oman numbers (968)
     if len(clean_number) == 8 and clean_number.startswith(('9', '7', '8')):
-        # For 8-digit Oman numbers, add country code (968)
         return '968' + clean_number
     elif len(clean_number) == 9 and clean_number.startswith('9'):
-        # For 9-digit numbers starting with 9
         return '968' + clean_number
     elif len(clean_number) == 12 and clean_number.startswith('968'):
-        # Already in correct format
         return clean_number
-    elif len(clean_number) == 11 and clean_number.startswith('968'):
-        # Already in correct format
-        return clean_number
-    elif len(clean_number) == 10 and clean_number.startswith('79'):
-        # Handle numbers like 79XXXXXXX
+    elif len(clean_number) == 11 and clean_number.startswith('0968'):
         return '968' + clean_number[1:]
-    elif len(clean_number) == 10 and clean_number.startswith('9'):
-        # Handle 10-digit numbers starting with 9
-        return '968' + clean_number
+    elif len(clean_number) == 10 and clean_number.startswith('968'):
+        return '968' + clean_number[3:]
     
-    logger.warning(f"⚠️ Unrecognized phone number format: {number} (cleaned: {clean_number})")
+    logger.warning(f"⚠️ Unrecognized phone format: {number}")
     return None
 
-def get_cruise_capacity(cruise_date, cruise_type):
+def get_cruise_capacity(date, cruise_type):
     """Get current capacity for a specific cruise"""
     try:
         if not sheet:
             return 0
             
-        all_records = sheet.get_all_records()
+        records = sheet.get_all_records()
         total_guests = 0
         
-        for record in all_records:
-            if (record.get('Cruise Date') == cruise_date and 
-                record.get('Cruise Type') == cruise_type and
-                record.get('Booking Status') != 'Cancelled'):
+        for record in records:
+            # Ensure we're comparing strings correctly
+            record_date = str(record.get('Cruise Date', '')).strip()
+            record_cruise = str(record.get('Cruise Type', '')).strip()
+            booking_status = str(record.get('Booking Status', '')).strip()
+            
+            if (record_date == date and 
+                record_cruise == cruise_type and
+                booking_status.lower() != 'cancelled'):
                 total_guests += int(record.get('Total Guests', 0))
         
         return total_guests
     except Exception as e:
-        logger.error(f"Error getting cruise capacity: {str(e)}")
+        logger.error(f"Error getting capacity: {str(e)}")
+        logger.error(traceback.format_exc())
         return 0
 
 def calculate_total_amount(cruise_type, adults, children, infants):
@@ -245,447 +470,91 @@ def calculate_total_amount(cruise_type, adults, children, infants):
     total = (adults * config["price_adult"]) + (children * config["price_child"])
     return round(total, 3)
 
-def send_whatsapp_message(to, message, interactive_data=None):
-    """Send WhatsApp message via Meta API"""
+def send_whatsapp_message(to, message, interactive_data=None, media=None):
+    """Send WhatsApp message via Meta API with retry logic"""
     try:
-        clean_to = clean_oman_number(to)
+        clean_to = clean_phone_number(to)
         if not clean_to:
-            logger.error(f"❌ Invalid phone number format: {to}")
+            logger.error(f"❌ Invalid phone number: {to}")
             return False
         
-        # WhatsApp Business API URL
-        url = f"https://graph.facebook.com/v17.0/{WHATSAPP_PHONE_ID}/messages"
+        url = f"https://graph.facebook.com/v20.0/{WHATSAPP_PHONE_ID}/messages"
         headers = {
             "Authorization": f"Bearer {WHATSAPP_TOKEN}",
             "Content-Type": "application/json"
         }
         
-        if interactive_data:
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": clean_to,
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_to
+        }
+        
+        if media:
+            payload.update({
+                "type": "image",
+                "image": media
+            })
+        elif interactive_data:
+            payload.update({
                 "type": "interactive",
                 "interactive": interactive_data
-            }
+            })
         else:
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": clean_to,
+            payload.update({
                 "type": "text",
                 "text": {"body": message}
-            }
+            })
 
-        logger.info(f"📤 Sending WhatsApp message to {clean_to}")
+        logger.info(f"📤 Sending message to {clean_to} | Type: {payload.get('type')}")
+
+        # Retry logic for network issues
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response_data = response.json()
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ Message sent to {clean_to} (Attempt {attempt + 1})")
+                    return True
+                else:
+                    error_msg = response_data.get('error', {}).get('message', 'Unknown error')
+                    error_code = response_data.get('error', {}).get('code', 'Unknown')
+                    logger.error(f"❌ WhatsApp API error (Attempt {attempt + 1}): {error_code} - {error_msg}")
+                    
+                    if response.status_code == 429:  # Rate limited
+                        wait_time = 2 ** attempt  # Exponential backoff
+                        logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        break
+                        
+            except requests.exceptions.Timeout:
+                logger.warning(f"⏰ Timeout on attempt {attempt + 1} for {clean_to}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                else:
+                    return False
+            except Exception as e:
+                logger.error(f"🚨 Unexpected error sending message: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                else:
+                    return False
         
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response_data = response.json()
-        
-        if response.status_code == 200:
-            logger.info(f"✅ WhatsApp message sent successfully to {clean_to}")
-            return True
-        else:
-            error_message = response_data.get('error', {}).get('message', 'Unknown error')
-            error_code = response_data.get('error', {}).get('code', 'Unknown code')
-            logger.error(f"❌ WhatsApp API error {response.status_code} (Code: {error_code}): {error_message}")
-            
-            # Log the full error details for debugging
-            logger.error(f"🔍 Full error details: {response_data}")
-            
-            return False
+        return False
         
     except Exception as e:
-        logger.error(f"🚨 Failed to send WhatsApp message: {str(e)}")
+        logger.error(f"🚨 Failed to send message: {str(e)}")
+        logger.error(traceback.format_exc())
         return False
 
-def send_language_selection(to):
-    """Send language selection menu"""
-    interactive_data = {
-        "type": "list",
-        "header": {
-            "type": "text",
-            "text": "🌊 Sindbad Cruises"  # 17 chars
-        },
-        "body": {
-            "text": ARABIC_MESSAGES["welcome"]
-        },
-        "action": {
-            "button": "🌐 Select Language",  # 18 chars
-            "sections": [
-                {
-                    "title": "Language Options",  # SHORTENED: 15 chars (was "Choose Language / اختر اللغة" - 29 chars)
-                    "rows": [
-                        {
-                            "id": "lang_english",
-                            "title": "🇺🇸 English",
-                            "description": "Continue in English"
-                        },
-                        {
-                            "id": "lang_arabic", 
-                            "title": "🇴🇲 العربية",
-                            "description": "المتابعة باللغة العربية"
-                        }
-                    ]
-                }
-            ]
-        }
-    }
-    
-    return send_whatsapp_message(to, "", interactive_data)
-
-def send_main_menu(to, language='english'):
-    """Send main menu based on language"""
-    contact = CRUISE_CONFIG["contact"]
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["main_menu"].format(
-            contact["phone1"], contact["phone2"], 
-            contact["location"], contact["email"], contact["website"]
-        )
-        
-        interactive_data = {
-            "type": "list",
-            "header": {
-                "type": "text",
-                "text": "🌊 رحلات السندباد"  # 15 chars
-            },
-            "body": {
-                "text": "اختر من الخيارات:"  # 15 chars
-            },
-            "action": {
-                "button": "عرض الخيارات",  # 11 chars
-                "sections": [
-                    {
-                        "title": "الخدمات",  # 7 chars (GOOD)
-                        "rows": [
-                            {
-                                "id": "book_cruise_ar",
-                                "title": "📅 حجز رحلة",  # 9 chars
-                                "description": "احجز رحلتك البحرية"
-                            },
-                            {
-                                "id": "pricing_ar", 
-                                "title": "💰 الأسعار",  # 8 chars
-                                "description": "أسعار الرحلات"
-                            },
-                            {
-                                "id": "schedule_ar",
-                                "title": "🕒 الجدول",  # 8 chars
-                                "description": "مواعيد الرحلات"
-                            },
-                            {
-                                "id": "contact_ar",
-                                "title": "📞 اتصل بنا",  # 9 chars
-                                "description": "معلومات الاتصال"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    else:
-        message = f"""🌊 *Sindbad Ship Cruises* 🚢
-
-*Cruise Features:*
-• 🛳️ Luxury sea cruise
-• ☕ Cafe on board  
-• 🌅 Stunning sea views
-• 🎵 Music & entertainment
-
-*Contact Information:*
-📞 {contact["phone1"]} | {contact["phone2"]}
-📍 {contact["location"]}
-📧 {contact["email"]}
-🌐 {contact["website"]}
-
-Please choose from the menu:"""
-        
-        interactive_data = {
-            "type": "list",
-            "header": {
-                "type": "text",
-                "text": "🌊 Sindbad Cruises"  # 17 chars
-            },
-            "body": {
-                "text": "Choose from options:"  # 20 chars
-            },
-            "action": {
-                "button": "View Options",  # 12 chars
-                "sections": [
-                    {
-                        "title": "Services",  # 8 chars (GOOD)
-                        "rows": [
-                            {
-                                "id": "book_cruise",
-                                "title": "📅 Book Cruise",  # 13 chars
-                                "description": "Book your sea cruise"
-                            },
-                            {
-                                "id": "pricing", 
-                                "title": "💰 Pricing",  # 9 chars
-                                "description": "Cruise prices"
-                            },
-                            {
-                                "id": "schedule",
-                                "title": "🕒 Schedule",  # 10 chars
-                                "description": "Cruise timings"
-                            },
-                            {
-                                "id": "contact",
-                                "title": "📞 Contact Us",  # 12 chars
-                                "description": "Contact information"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    
-    return send_whatsapp_message(to, message, interactive_data)
-
-def start_booking_flow(to, language='english'):
-    """Start the booking flow"""
-    booking_sessions[to] = {
-        'step': 'awaiting_name',
-        'language': language,
-        'created_at': datetime.now().isoformat()
-    }
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["booking_start"]
-    else:
-        message = "📝 *Let's Book Your Cruise!* 🎫\n\nI'll help you book your sea cruise. 🚢\n\nFirst, please send me your:\n\n👤 *Full Name*\n\n*Example:*\nAhmed Al Harthy"
-    
-    return send_whatsapp_message(to, message)
-
-def ask_for_phone(to, name, language='english'):
-    """Ask for phone number"""
-    booking_sessions[to].update({
-        'step': 'awaiting_phone',
-        'name': name
-    })
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["ask_phone"].format(name)
-    else:
-        message = f"Perfect, {name}! 👋\n\nNow please send me your:\n\n📞 *Phone Number*\n\n*Example:*\n91234567"
-    
-    return send_whatsapp_message(to, message)
-
-def ask_for_date(to, name, phone, language='english'):
-    """Ask for cruise date"""
-    booking_sessions[to].update({
-        'step': 'awaiting_date',
-        'name': name,
-        'phone': phone
-    })
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["ask_date"]
-    else:
-        message = "📅 *Cruise Date*\n\nPlease send your *preferred date* for the cruise:\n\n📋 *Format Examples:*\n• **Tomorrow**\n• **October 29**\n• **Next Friday**\n• **15 November**\n• **2024-12-25**"
-    
-    return send_whatsapp_message(to, message)
-
-def ask_for_adults(to, name, phone, cruise_date, language='english'):
-    """Ask for number of adults"""
-    booking_sessions[to].update({
-        'step': 'awaiting_adults',
-        'name': name,
-        'phone': phone,
-        'cruise_date': cruise_date
-    })
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["ask_adults"]
-    else:
-        message = "👥 *Number of Adults*\n\nHow many *adults* (12 years and above) will be joining?\n\nPlease send the number:\n*Examples:* 2, 4, 6"
-    
-    return send_whatsapp_message(to, message)
-
-def ask_for_children(to, name, phone, cruise_date, adults_count, language='english'):
-    """Ask for number of children"""
-    booking_sessions[to].update({
-        'step': 'awaiting_children',
-        'name': name,
-        'phone': phone,
-        'cruise_date': cruise_date,
-        'adults_count': adults_count
-    })
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["ask_children"].format(adults_count)
-    else:
-        message = f"👶 *Number of Children*\n\nAdults: {adults_count}\n\nHow many *children* (2-11 years) will be joining?\n\nPlease send the number:\n*Examples:* 0, 1, 2"
-    
-    return send_whatsapp_message(to, message)
-
-def ask_for_infants(to, name, phone, cruise_date, adults_count, children_count, language='english'):
-    """Ask for number of infants"""
-    booking_sessions[to].update({
-        'step': 'awaiting_infants',
-        'name': name,
-        'phone': phone,
-        'cruise_date': cruise_date,
-        'adults_count': adults_count,
-        'children_count': children_count
-    })
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["ask_infants"].format(adults_count, children_count)
-    else:
-        message = f"🍼 *Number of Infants*\n\nAdults: {adults_count}\nChildren: {children_count}\n\nHow many *infants* (below 2 years) will be joining?\n\n*Note:* Infants are free\n\nPlease send the number:\n*Examples:* 0, 1, 2"
-    
-    return send_whatsapp_message(to, message)
-
-def ask_for_cruise_type(to, name, phone, cruise_date, adults_count, children_count, infants_count, language='english'):
-    """Ask for cruise type with capacity check"""
-    total_guests = int(adults_count) + int(children_count) + int(infants_count)
-    
-    booking_sessions[to].update({
-        'step': 'awaiting_cruise_type',
-        'name': name,
-        'phone': phone,
-        'cruise_date': cruise_date,
-        'adults_count': adults_count,
-        'children_count': children_count,
-        'infants_count': infants_count,
-        'total_guests': total_guests
-    })
-    
-    # Check capacity for each cruise type
-    available_cruises = []
-    for cruise_key, cruise_info in CRUISE_CONFIG["cruise_types"].items():
-        current_capacity = get_cruise_capacity(cruise_date, cruise_info["name_en"])
-        available_seats = CRUISE_CONFIG["max_capacity"] - current_capacity
-        
-        if available_seats >= total_guests:
-            available_cruises.append((cruise_key, cruise_info, available_seats))
-    
-    if not available_cruises:
-        # No available cruises
-        if language == 'arabic':
-            message = f"❌ *عفواً، لا توجد أماكن متاحة*\n\nجميع الرحلات بتاريخ {cruise_date} ممتلئة بالكامل.\n\nيرجى اختيار تاريخ آخر."
-        else:
-            message = f"❌ *Sorry, no available seats*\n\nAll cruises on {cruise_date} are fully booked.\n\nPlease choose another date."
-        
-        send_whatsapp_message(to, message)
-        # Restart booking flow
-        start_booking_flow(to, language)
-        return False
-    
-    if language == 'arabic':
-        body_text = ARABIC_MESSAGES["ask_cruise_type"].format(total_guests, adults_count, children_count, infants_count)
-        
-        rows = []
-        for cruise_key, cruise_info, available_seats in available_cruises:
-            # Ensure row titles are within limits
-            cruise_title = f"🕒 {cruise_info['name_ar']}"  # Should be under 24 chars
-            rows.append({
-                "id": f"cruise_{cruise_key}",
-                "title": cruise_title,
-                "description": f"{cruise_info['time_ar']} - {available_seats} مقعد"
-            })
-        
-        interactive_data = {
-            "type": "list",
-            "header": {
-                "type": "text",
-                "text": "اختر الرحلة"  # 9 chars (GOOD)
-            },
-            "body": {
-                "text": body_text
-            },
-            "action": {
-                "button": "اختر الرحلة",  # 9 chars
-                "sections": [{
-                    "title": "الرحلات",  # 6 chars (GOOD)
-                    "rows": rows
-                }]
-            }
-        }
-    else:
-        body_text = f"📊 *Booking Summary*\n\nTotal Guests: {total_guests}\n• {adults_count} adults\n• {children_count} children\n• {infants_count} infants\n\nPlease choose your cruise type:"
-        
-        rows = []
-        for cruise_key, cruise_info, available_seats in available_cruises:
-            # Ensure row titles are within limits
-            cruise_title = f"🕒 {cruise_info['name_en']}"  # Should be under 24 chars
-            rows.append({
-                "id": f"cruise_{cruise_key}",
-                "title": cruise_title,
-                "description": f"{cruise_info['time']} - {available_seats} seats"
-            })
-        
-        interactive_data = {
-            "type": "list",
-            "header": {
-                "type": "text",
-                "text": "Choose Cruise"  # 12 chars (GOOD)
-            },
-            "body": {
-                "text": body_text
-            },
-            "action": {
-                "button": "Select Cruise",  # 13 chars
-                "sections": [{
-                    "title": "Cruises",  # 7 chars (GOOD)
-                    "rows": rows
-                }]
-            }
-        }
-    
-    return send_whatsapp_message(to, "", interactive_data)
-
-def request_payment(to, booking_data, language='english'):
-    """Request payment via WhatsApp Business"""
-    cruise_type = CRUISE_CONFIG["cruise_types"][booking_data['cruise_type']]
-    total_amount = calculate_total_amount(
-        booking_data['cruise_type'],
-        int(booking_data['adults_count']),
-        int(booking_data['children_count']),
-        int(booking_data['infants_count'])
-    )
-    
-    # Store payment session
-    payment_sessions[to] = {
-        **booking_data,
-        'total_amount': total_amount,
-        'booking_id': generate_booking_id(),
-        'created_at': datetime.now().isoformat()
-    }
-    
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["payment_instructions"].format(total_amount, total_amount)
-    else:
-        message = f"""💳 *Payment Instructions*
-
-*Total Amount: {total_amount} OMR*
-
-To complete your booking, please pay via:
-
-1. Open WhatsApp
-2. Tap the payment icon 💳  
-3. Choose WhatsApp Pay
-4. Enter amount: {total_amount}
-5. Complete payment
-
-After payment, you'll receive booking confirmation automatically."""
-
-    # For now, we'll simulate payment completion
-    # In production, you'd integrate with WhatsApp Business Payment API
-    return complete_booking(to, language)
-
-def complete_booking(to, language='english'):
-    """Complete booking and save to sheet"""
-    if to not in payment_sessions:
-        return False
-    
-    booking_data = payment_sessions[to]
-    
-    # Save to Google Sheets
+def save_booking_to_sheets(booking_data, language, payment_status="Pending", payment_method="Not Selected", transaction_id="N/A", payment_timestamp="", receipt_url="", currency="OMR"):
+    """Save booking to Google Sheets with comprehensive fields"""
     try:
         if not sheet:
-            logger.error("❌ Cannot save booking - Google Sheets not available")
+            logger.error("❌ Google Sheets not available")
             return False
             
         timestamp = datetime.now().strftime("%Y-%m-%d %I:%M %p")
@@ -696,7 +565,7 @@ def complete_booking(to, language='english'):
             booking_data['booking_id'],
             booking_data['name'],
             booking_data['phone'],
-            to,
+            booking_data['whatsapp_id'],
             booking_data['cruise_date'],
             cruise_info['time'],
             cruise_info['name_en'],
@@ -705,27 +574,602 @@ def complete_booking(to, language='english'):
             booking_data['infants_count'],
             booking_data['total_guests'],
             booking_data['total_amount'],
-            'Paid',  # Payment Status
-            'WhatsApp Pay',  # Payment Method
-            f"WA_{int(time.time())}",  # Transaction ID
+            payment_status,
+            payment_method,
+            transaction_id,
+            payment_timestamp,
             language.title(),
             'Confirmed',
-            'Auto-generated via WhatsApp Bot'
+            'Via WhatsApp Bot',
+            receipt_url,
+            currency
         ]
         
+        logger.info(f"💾 Saving to sheets: {booking_data['booking_id']}")
         sheet.append_row(row_data)
         logger.info(f"✅ Booking saved: {booking_data['booking_id']}")
+        return True
         
     except Exception as e:
         logger.error(f"❌ Failed to save booking: {str(e)}")
+        logger.error(traceback.format_exc())
+        return False
+
+def update_payment_in_sheets(booking_id, payment_status, payment_method, transaction_id, payment_timestamp, receipt_url):
+    """Update payment details in existing booking record"""
+    try:
+        if not sheet:
+            logger.error("❌ Google Sheets not available")
+            return False
+        
+        # Get all records
+        records = sheet.get_all_records()
+        
+        # Find the row with matching booking_id
+        for i, record in enumerate(records, start=2):  # Start at 2 because row 1 is headers
+            if str(record.get('Booking ID', '')).strip() == str(booking_id).strip():
+                # Update the specific row
+                cell_range = f"O{i}:U{i}"  # Payment Status to Receipt URL
+                values = [
+                    payment_status,
+                    payment_method,
+                    transaction_id,
+                    payment_timestamp,
+                    receipt_url
+                ]
+                
+                sheet.update(f"O{i}", [values])
+                logger.info(f"✅ Updated payment for booking {booking_id}: {payment_status}")
+                return True
+        
+        logger.warning(f"⚠️ Booking ID {booking_id} not found for payment update")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to update payment in sheets: {str(e)}")
+        logger.error(traceback.format_exc())
+        return False
+
+def initiate_whatsapp_payment(phone_number, booking_id, amount, currency="OMR"):
+    """
+    Initiate WhatsApp Business Payment request
+    Note: WhatsApp Payments API requires business verification and is only available in supported countries.
+    This implementation follows the documented API structure.
+    """
+    try:
+        clean_to = clean_phone_number(phone_number)
+        if not clean_to:
+            return False, "Invalid phone number"
+        
+        # WhatsApp Payments API endpoint
+        url = f"https://graph.facebook.com/v20.0/{WHATSAPP_PHONE_ID}/payments"
+        
+        headers = {
+            "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        # Generate unique payment request ID
+        payment_request_id = f"PR_{booking_id}_{int(time.time())}"
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_to,
+            "type": "payment",
+            "payment": {
+                "currency": currency,
+                "amount": int(amount * 1000),  # Convert to smallest unit (e.g., OMR 2.500 → 2500)
+                "request_id": payment_request_id,
+                "note": f"Booking ID: {booking_id} - Sindbad Ship Cruise",
+                "label": "Pay for Cruise Booking"
+            }
+        }
+        
+        logger.info(f"🔄 Initiating WhatsApp payment for {clean_to} | Amount: {amount} {currency} | Request ID: {payment_request_id}")
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response_data = response.json()
+        
+        if response.status_code == 200:
+            logger.info(f"✅ WhatsApp payment initiated successfully for {clean_to}")
+            return True, payment_request_id
+        else:
+            error_msg = response_data.get('error', {}).get('message', 'Unknown error')
+            error_code = response_data.get('error', {}).get('code', 'Unknown')
+            logger.error(f"❌ WhatsApp payment initiation failed: {error_code} - {error_msg}")
+            return False, error_msg
+            
+    except Exception as e:
+        logger.error(f"🚨 Failed to initiate WhatsApp payment: {str(e)}")
+        logger.error(traceback.format_exc())
+        return False, str(e)
+
+def check_payment_status(payment_request_id):
+    """
+    Check payment status (for webhook handling)
+    This function would be called by a webhook endpoint when WhatsApp sends payment status updates
+    """
+    # Note: WhatsApp Payments API doesn't have a direct status check endpoint.
+    # Instead, we rely on the payment_status webhook callback.
+    # This function is kept for future implementation if Meta provides a direct API.
+    return None
+
+def cleanup_expired_sessions():
+    """Remove sessions older than SESSION_TIMEOUT_MINUTES"""
+    now = datetime.now()
+    expired_sessions = []
+    
+    for phone, session in user_sessions.items():
+        created_at = datetime.fromisoformat(session['created_at'])
+        if (now - created_at).total_seconds() > (SESSION_TIMEOUT_MINUTES * 60):
+            expired_sessions.append(phone)
+            logger.info(f"⏳ Cleaning up expired session for {phone}")
+    
+    for phone in expired_sessions:
+        del user_sessions[phone]
+
+# ==============================
+# FLOW MANAGEMENT
+# ==============================
+
+def send_language_menu(to):
+    """Send language selection menu"""
+    interactive_data = {
+        "type": "list",
+        "header": {"type": "text", "text": "🌊 Sindbad Cruises"},
+        "body": {"text": MESSAGES["english"]["welcome"]},
+        "action": {
+            "button": "🌐 Select Language",
+            "sections": [{
+                "title": "Language",
+                "rows": [
+                    {"id": "lang_english", "title": "🇺🇸 English", "description": "Continue in English"},
+                    {"id": "lang_arabic", "title": "🇴🇲 العربية", "description": "المتابعة باللغة العربية"}
+                ]
+            }]
+        }
+    }
+    return send_whatsapp_message(to, "", interactive_data)
+
+def send_main_menu(to, language):
+    """Send main menu"""
+    contact = CRUISE_CONFIG["contact"]
+    
+    if language == "arabic":
+        message = MESSAGES["arabic"]["main_menu"]
+        interactive_data = {
+            "type": "list",
+            "header": {"type": "text", "text": "🌊 رحلات السندباد"},
+            "body": {"text": "اختر من الخيارات:"},
+            "action": {
+                "button": "عرض الخيارات",
+                "sections": [{
+                    "title": "الخدمات",
+                    "rows": [
+                        {"id": "book_cruise", "title": "📅 حجز رحلة", "description": "احجز رحلتك البحرية"},
+                        {"id": "pricing", "title": "💰 الأسعار", "description": "أسعار الرحلات"},
+                        {"id": "schedule", "title": "🕒 الجدول", "description": "مواعيد الرحلات"},
+                        {"id": "contact", "title": "📞 اتصل بنا", "description": "معلومات الاتصال"}
+                    ]
+                }]
+            }
+        }
+    else:
+        message = MESSAGES["english"]["main_menu"]
+        interactive_data = {
+            "type": "list",
+            "header": {"type": "text", "text": "🌊 Sindbad Cruises"},
+            "body": {"text": "Choose from options:"},
+            "action": {
+                "button": "View Options",
+                "sections": [{
+                    "title": "Services",
+                    "rows": [
+                        {"id": "book_cruise", "title": "📅 Book Cruise", "description": "Book your sea cruise"},
+                        {"id": "pricing", "title": "💰 Pricing", "description": "Cruise prices"},
+                        {"id": "schedule", "title": "🕒 Schedule", "description": "Cruise timings"},
+                        {"id": "contact", "title": "📞 Contact Us", "description": "Contact information"}
+                    ]
+                }]
+            }
+        }
+    
+    return send_whatsapp_message(to, message, interactive_data)
+
+def start_booking(to, language):
+    """Start booking flow"""
+    user_sessions[to] = {
+        'language': language,
+        'step': 'awaiting_name',
+        'created_at': datetime.now().isoformat()
+    }
+    message = MESSAGES[language]["booking_start"]
+    return send_whatsapp_message(to, message)
+
+def handle_booking_step(to, text, language, session):
+    """Handle booking flow steps with validation"""
+    step = session.get('step')
+    
+    if step == 'awaiting_name':
+        if not text.strip():
+            return send_whatsapp_message(to, MESSAGES[language]["invalid_input"])
+        
+        session.update({'step': 'awaiting_phone', 'name': text.strip()})
+        message = MESSAGES[language]["ask_phone"].format(text.strip())
+        return send_whatsapp_message(to, message)
+    
+    elif step == 'awaiting_phone':
+        if not text.strip():
+            return send_whatsapp_message(to, MESSAGES[language]["invalid_input"])
+        
+        # Validate phone number format
+        clean_phone = clean_phone_number(text)
+        if not clean_phone:
+            return send_whatsapp_message(to, "❌ Please enter a valid Omani phone number (e.g., 91234567)")
+        
+        session.update({'step': 'awaiting_date', 'phone': text.strip(), 'whatsapp_id': clean_phone})
+        message = MESSAGES[language]["ask_date"]
+        return send_whatsapp_message(to, message)
+    
+    elif step == 'awaiting_date':
+        if not text.strip():
+            return send_whatsapp_message(to, MESSAGES[language]["invalid_input"])
+        
+        # Basic date validation - allow any text for now (handled by user)
+        session.update({'step': 'awaiting_adults', 'cruise_date': text.strip()})
+        message = MESSAGES[language]["ask_adults"]
+        return send_whatsapp_message(to, message)
+    
+    elif step == 'awaiting_adults':
+        if not text.strip().isdigit() or int(text.strip()) <= 0:
+            return send_whatsapp_message(to, "❌ Please enter a valid number of adults (1 or more)")
+        
+        session.update({'step': 'awaiting_children', 'adults_count': int(text.strip())})
+        message = MESSAGES[language]["ask_children"].format(text.strip())
+        return send_whatsapp_message(to, message)
+    
+    elif step == 'awaiting_children':
+        if not text.strip().isdigit() or int(text.strip()) < 0:
+            return send_whatsapp_message(to, "❌ Please enter a valid number of children (0 or more)")
+        
+        session.update({'step': 'awaiting_infants', 'children_count': int(text.strip())})
+        message = MESSAGES[language]["ask_infants"].format(
+            session['adults_count'], text.strip()
+        )
+        return send_whatsapp_message(to, message)
+    
+    elif step == 'awaiting_infants':
+        if not text.strip().isdigit() or int(text.strip()) < 0:
+            return send_whatsapp_message(to, "❌ Please enter a valid number of infants (0 or more)")
+        
+        session.update({'infants_count': int(text.strip())})
+        return send_cruise_type_menu(to, language, session)
+    
+    return False
+
+def send_cruise_type_menu(to, language, session):
+    """Send cruise type selection menu with capacity check"""
+    adults = session['adults_count']
+    children = session['children_count']
+    infants = session['infants_count']
+    total_guests = adults + children + infants
+    date = session['cruise_date']
+    
+    # Check capacity for each cruise type
+    available_cruises = []
+    for cruise_key, cruise_info in CRUISE_CONFIG["cruise_types"].items():
+        current_capacity = get_cruise_capacity(date, cruise_info["name_en"])
+        available_seats = CRUISE_CONFIG["max_capacity"] - current_capacity
+        
+        if available_seats >= total_guests:
+            available_cruises.append((cruise_key, cruise_info, available_seats))
+    
+    if not available_cruises:
+        message = f"❌ Sorry, no available seats on {date}.
+Please choose another date."
+        send_whatsapp_message(to, message)
+        # Restart booking flow
+        start_booking(to, language)
         return False
     
-    # Send confirmation message
+    if language == "arabic":
+        body_text = MESSAGES["arabic"]["ask_cruise_type"].format(
+            total_guests, adults, children, infants
+        )
+        rows = []
+        for cruise_key, cruise_info, available_seats in available_cruises:
+            rows.append({
+                "id": f"cruise_{cruise_key}",
+                "title": f"🕒 {cruise_info['name_ar']}",
+                "description": f"{cruise_info['time_ar']} - {available_seats} مقاعد"
+            })
+        
+        interactive_data = {
+            "type": "list",
+            "header": {"type": "text", "text": "اختر الرحلة"},
+            "body": {"text": body_text},
+            "action": {
+                "button": "اختر الرحلة",
+                "sections": [{"title": "الرحلات", "rows": rows}]
+            }
+        }
+    else:
+        body_text = MESSAGES["english"]["ask_cruise_type"].format(
+            total_guests, adults, children, infants
+        )
+        rows = []
+        for cruise_key, cruise_info, available_seats in available_cruises:
+            rows.append({
+                "id": f"cruise_{cruise_key}",
+                "title": f"🕒 {cruise_info['name_en']}",
+                "description": f"{cruise_info['time']} - {available_seats} seats"
+            })
+        
+        interactive_data = {
+            "type": "list",
+            "header": {"type": "text", "text": "Choose Cruise"},
+            "body": {"text": body_text},
+            "action": {
+                "button": "Select Cruise",
+                "sections": [{"title": "Cruises", "rows": rows}]
+            }
+        }
+    
+    session['step'] = 'awaiting_cruise_type'
+    return send_whatsapp_message(to, "", interactive_data)
+
+def send_payment_options_menu(to, session):
+    """Send payment method selection menu"""
+    language = session['language']
+    total_amount = calculate_total_amount(
+        session['cruise_type'],
+        session['adults_count'],
+        session['children_count'],
+        session['infants_count']
+    )
+    currency = CRUISE_CONFIG["currency"]
+    
+    if language == "arabic":
+        message = MESSAGES["arabic"]["payment_options"]
+        interactive_data = {
+            "type": "list",
+            "header": {"type": "text", "text": "💳 خيارات الدفع"},
+            "body": {"text": message},
+            "action": {
+                "button": "اختر طريقة الدفع",
+                "sections": [{
+                    "title": "طرق الدفع",
+                    "rows": [
+                        {"id": "payment_whatsapp", "title": "💳 دفع واتساب", "description": "دفع فوري عبر واتساب"},
+                        {"id": "payment_bank", "title": "💵 التحويل البنكي", "description": "تحويل بنكي يدوي"},
+                        {"id": "payment_card", "title": "💳 بطاقة ائتمان", "description": "دفع عبر رابط آمن"}
+                    ]
+                }]
+            }
+        }
+    else:
+        message = MESSAGES["english"]["payment_options"]
+        interactive_data = {
+            "type": "list",
+            "header": {"type": "text", "text": "💳 Payment Options"},
+            "body": {"text": message},
+            "action": {
+                "button": "Select Payment Method",
+                "sections": [{
+                    "title": "Payment Methods",
+                    "rows": [
+                        {"id": "payment_whatsapp", "title": "💳 WhatsApp Pay", "description": "Instant payment via WhatsApp"},
+                        {"id": "payment_bank", "title": "💵 Bank Transfer", "description": "Manual bank transfer"},
+                        {"id": "payment_card", "title": "💳 Credit Card", "description": "Secure card payment link"}
+                    ]
+                }]
+            }
+        }
+    
+    session['step'] = 'awaiting_payment_method'
+    return send_whatsapp_message(to, "", interactive_data)
+
+def request_payment(to, session):
+    """Request payment confirmation with WhatsApp Pay option"""
+    language = session['language']
+    cruise_type = session['cruise_type']
+    cruise_info = CRUISE_CONFIG["cruise_types"][cruise_type]
+    
+    total_amount = calculate_total_amount(
+        cruise_type,
+        session['adults_count'],
+        session['children_count'],
+        session['infants_count']
+    )
+    
+    booking_id = generate_booking_id()
+    
+    # Prepare booking data
+    booking_data = {
+        'booking_id': booking_id,
+        'name': session['name'],
+        'phone': session['phone'],
+        'whatsapp_id': to,
+        'cruise_date': session['cruise_date'],
+        'cruise_type': cruise_type,
+        'adults_count': session['adults_count'],
+        'children_count': session['children_count'],
+        'infants_count': session['infants_count'],
+        'total_guests': session['adults_count'] + session['children_count'] + session['infants_count'],
+        'total_amount': total_amount,
+        'currency': CRUISE_CONFIG["currency"]
+    }
+    
+    session['booking_data'] = booking_data
+    session['step'] = 'awaiting_payment_method'
+    
+    # Send payment options menu instead of direct payment request
+    return send_payment_options_menu(to, session)
+
+def initiate_payment_via_whatsapp(to, session):
+    """Initiate WhatsApp Pay payment"""
+    language = session['language']
+    booking_data = session['booking_data']
+    amount = booking_data['total_amount']
+    currency = booking_data['currency']
+    booking_id = booking_data['booking_id']
+    
+    success, result = initiate_whatsapp_payment(to, booking_id, amount, currency)
+    
+    if success:
+        # Save pending payment record
+        save_booking_to_sheets(
+            booking_data, 
+            language, 
+            payment_status="Pending (WhatsApp Pay)",
+            payment_method="WhatsApp Pay",
+            transaction_id=result,
+            payment_timestamp=datetime.now().strftime("%Y-%m-%d %I:%M %p")
+        )
+        
+        message = MESSAGES[language]["payment_initiated"].format(booking_id)
+        send_whatsapp_message(to, message)
+        
+        # Set step to wait for payment confirmation
+        session['step'] = 'awaiting_payment_confirmation'
+        session['payment_request_id'] = result
+        session['payment_initiated_at'] = datetime.now().isoformat()
+        
+        logger.info(f"✅ WhatsApp payment initiated for {to} | Request ID: {result}")
+        
+    else:
+        # Fallback to manual payment options
+        message = MESSAGES[language]["payment_failed"].format(
+            CRUISE_CONFIG["contact"]["phone1"], 
+            CRUISE_CONFIG["contact"]["phone2"], 
+            booking_id
+        )
+        send_whatsapp_message(to, message)
+        send_main_menu(to, language)
+
+def handle_payment_method_selection(to, selection, session):
+    """Handle payment method selection"""
+    language = session['language']
+    booking_data = session['booking_data']
+    amount = booking_data['total_amount']
+    currency = booking_data['currency']
+    booking_id = booking_data['booking_id']
+    
+    if selection == "payment_whatsapp":
+        message = MESSAGES[language]["payment_method_selected"].format("WhatsApp Pay")
+        send_whatsapp_message(to, message)
+        
+        # Initiate WhatsApp Pay
+        initiate_payment_via_whatsapp(to, session)
+        
+    elif selection == "payment_bank":
+        message = MESSAGES[language]["payment_method_selected"].format("Bank Transfer")
+        send_whatsapp_message(to, message)
+        
+        # Save booking with bank transfer status
+        save_booking_to_sheets(
+            booking_data, 
+            language, 
+            payment_status="Pending (Bank Transfer)",
+            payment_method="Bank Transfer",
+            transaction_id="Manual"
+        )
+        
+        # Provide bank details
+        if language == "arabic":
+            bank_message = f"""🏦 *تفاصيل التحويل البنكي*
+
+لإتمام الدفع، يرجى التحويل إلى:
+- البنك: [اسم البنك]
+- الحساب: [رقم الحساب]
+- IBAN: [رقم IBAN]
+
+بعد التحويل، أرسل إثبات الدفع مع رقم الحجز: {booking_id}
+
+ملاحظة: سيتم تأكيد الحجز بعد التحقق من التحويل (قد يستغرق حتى 24 ساعة)."""
+        else:
+            bank_message = f"""🏦 *Bank Transfer Details*
+
+To complete payment, please transfer to:
+- Bank: [Bank Name]
+- Account: [Account Number]
+- IBAN: [IBAN]
+
+After transfer, send proof of payment with your Booking ID: {booking_id}
+
+Note: Booking will be confirmed after verification (may take up to 24 hours)."""
+        
+        send_whatsapp_message(to, bank_message)
+        send_main_menu(to, language)
+        
+        # Clear session
+        if to in user_sessions:
+            del user_sessions[to]
+            
+    elif selection == "payment_card":
+        message = MESSAGES[language]["payment_method_selected"].format("Credit Card")
+        send_whatsapp_message(to, message)
+        
+        # Save booking with card payment status
+        save_booking_to_sheets(
+            booking_data, 
+            language, 
+            payment_status="Pending (Card)",
+            payment_method="Credit Card",
+            transaction_id="Link Generated"
+        )
+        
+        # Provide secure payment link (you'll need to implement this)
+        if language == "arabic":
+            card_message = f"""💳 *رابط الدفع الآمن*
+
+لإتمام الدفع، يرجى النقر على الرابط أدناه واتباع التعليمات:
+
+[رابط الدفع الآمن - سيتم توليد تلقائيًا عند التفعيل]
+
+بعد الدفع، سيتم تأكيد حجزك تلقائيًا.
+
+رقم الحجز: {booking_id}"""
+        else:
+            card_message = f"""💳 *Secure Payment Link*
+
+To complete payment, click the link below and follow instructions:
+
+[Secure Payment Link - will be generated upon activation]
+
+After payment, your booking will be automatically confirmed.
+
+Booking ID: {booking_id}"""
+        
+        send_whatsapp_message(to, card_message)
+        send_main_menu(to, language)
+        
+        # Clear session
+        if to in user_sessions:
+            del user_sessions[to]
+    else:
+        send_whatsapp_message(to, MESSAGES[language]["invalid_input"])
+
+def confirm_booking(to, session):
+    """Confirm and save booking after payment is confirmed"""
+    language = session['language']
+    booking_data = session['booking_data']
     contact = CRUISE_CONFIG["contact"]
     cruise_info = CRUISE_CONFIG["cruise_types"][booking_data['cruise_type']]
     
-    if language == 'arabic':
-        message = ARABIC_MESSAGES["booking_complete"].format(
+    # Update payment status to confirmed
+    update_payment_in_sheets(
+        booking_data['booking_id'],
+        "Confirmed",
+        session.get('payment_method', 'Unknown'),
+        session.get('transaction_id', 'N/A'),
+        datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+        ""  # Receipt URL - can be populated later if needed
+    )
+    
+    # Send confirmation message
+    if language == "arabic":
+        message = MESSAGES["arabic"]["payment_confirmed"].format(
             booking_data['name'],
             booking_data['booking_id'],
             booking_data['name'],
@@ -738,108 +1182,253 @@ def complete_booking(to, language='english'):
             booking_data['children_count'],
             booking_data['infants_count'],
             booking_data['total_amount'],
+            CRUISE_CONFIG["currency"],
             contact['location'],
             contact['phone1'],
             contact['phone2']
         )
     else:
-        message = f"""🎉 *Booking Confirmed!* ✅
-
-Thank you {booking_data['name']}! Your cruise has been booked successfully. 🚢
-
-📋 *Booking Details:*
-🆔 Booking ID: {booking_data['booking_id']}
-👤 Name: {booking_data['name']}
-📞 Phone: {booking_data['phone']}
-📅 Date: {booking_data['cruise_date']}
-🕒 Time: {cruise_info['time']}
-🚢 Cruise Type: {cruise_info['name_en']}
-👥 Guests: {booking_data['total_guests']} total
-   • {booking_data['adults_count']} adults
-   • {booking_data['children_count']} children  
-   • {booking_data['infants_count']} infants
-💰 Amount: {booking_data['total_amount']} OMR
-
-⏰ *Reporting Time:* 1 hour before cruise
-📍 *Location:* {contact['location']}
-📞 *For inquiries:* {contact['phone1']} | {contact['phone2']}
-
-We wish you a wonderful cruise experience! 🌊"""
+        message = MESSAGES["english"]["payment_confirmed"].format(
+            booking_data['name'],
+            booking_data['booking_id'],
+            booking_data['name'],
+            booking_data['phone'],
+            booking_data['cruise_date'],
+            cruise_info['time'],
+            cruise_info['name_en'],
+            booking_data['total_guests'],
+            booking_data['adults_count'],
+            booking_data['children_count'],
+            booking_data['infants_count'],
+            booking_data['total_amount'],
+            CRUISE_CONFIG["currency"],
+            contact['location'],
+            contact['phone1'],
+            contact['phone2']
+        )
     
-    success = send_whatsapp_message(to, message)
+    # Clear session
+    if to in user_sessions:
+        del user_sessions[to]
     
-    # Clear sessions
-    if to in booking_sessions:
-        del booking_sessions[to]
-    if to in payment_sessions:
-        del payment_sessions[to]
-    
-    return success
+    return send_whatsapp_message(to, message)
 
-def handle_interaction(interaction_id, phone_number):
-    """Handle list interactions"""
-    language = get_user_language(phone_number)
+def cancel_booking(to, language):
+    """Cancel booking"""
+    if to in user_sessions:
+        del user_sessions[to]
+    
+    message = MESSAGES[language]["booking_cancelled"]
+    return send_whatsapp_message(to, message)
+
+def handle_payment_status_update(payment_request_id, status):
+    """
+    Handle payment status updates from WhatsApp webhook
+    This function is called when WhatsApp sends a payment status update
+    """
+    logger.info(f"🔔 Payment status update: {payment_request_id} -> {status}")
+    
+    # Find session by payment_request_id
+    for phone, session in user_sessions.items():
+        if session.get('payment_request_id') == payment_request_id:
+            if status == "completed":
+                # Payment confirmed
+                session['payment_method'] = "WhatsApp Pay"
+                session['transaction_id'] = payment_request_id
+                session['payment_status'] = "completed"
+                session['payment_confirmed_at'] = datetime.now().isoformat()
+                
+                # Confirm booking
+                confirm_booking(phone, session)
+                return True
+            elif status == "failed":
+                # Payment failed
+                message = MESSAGES[session['language']]["payment_failed"].format(
+                    CRUISE_CONFIG["contact"]["phone1"], 
+                    CRUISE_CONFIG["contact"]["phone2"], 
+                    session['booking_data']['booking_id']
+                )
+                send_whatsapp_message(phone, message)
+                
+                # Update sheet
+                update_payment_in_sheets(
+                    session['booking_data']['booking_id'],
+                    "Failed",
+                    "WhatsApp Pay",
+                    payment_request_id,
+                    datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+                    ""
+                )
+                
+                # Clear session
+                del user_sessions[phone]
+                return True
+            elif status == "expired":
+                # Payment expired
+                message = MESSAGES[session['language']]["payment_timeout"]
+                send_whatsapp_message(phone, message)
+                
+                # Update sheet
+                update_payment_in_sheets(
+                    session['booking_data']['booking_id'],
+                    "Expired",
+                    "WhatsApp Pay",
+                    payment_request_id,
+                    datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+                    ""
+                )
+                
+                # Clear session
+                del user_sessions[phone]
+                return True
+    
+    logger.warning(f"⚠️ Payment status update for unknown request ID: {payment_request_id}")
+    return False
+
+# ==============================
+# WEBHOOK HANDLERS
+# ==============================
+
+@app.route("/webhook", methods=["GET"])
+def verify_webhook():
+    """Webhook verification"""
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    
+    if token == VERIFY_TOKEN:
+        logger.info("✅ Webhook verified")
+        return challenge
+    else:
+        logger.warning("❌ Webhook verification failed")
+        return "Verification token mismatch", 403
+
+@app.route("/webhook", methods=["POST"])
+def handle_webhook():
+    """Handle incoming WhatsApp messages and payment status updates"""
+    try:
+        data = request.get_json()
+        logger.info(f"📨 Incoming webhook: {json.dumps(data, indent=2)}")
+        
+        # Handle payment status updates (Webhook from WhatsApp Payments)
+        if data.get("object") == "business_management" and data.get("entry"):
+            for entry in data.get("entry", []):
+                for change in entry.get("changes", []):
+                    if change.get("field") == "payments":
+                        payment_updates = change.get("value", {}).get("payment_updates", [])
+                        for update in payment_updates:
+                            payment_request_id = update.get("request_id")
+                            status = update.get("status")
+                            logger.info(f"🔔 Payment status update: {payment_request_id} -> {status}")
+                            handle_payment_status_update(payment_request_id, status)
+                        return jsonify({"status": "payment_status_handled"})
+        
+        # Handle standard WhatsApp messages
+        entry = data.get("entry", [{}])[0]
+        changes = entry.get("changes", [{}])[0]
+        value = changes.get("value", {})
+        messages = value.get("messages", [])
+        
+        if not messages:
+            return jsonify({"status": "no_message"})
+        
+        message = messages[0]
+        phone_number = message["from"]
+        
+        # Handle interactive messages
+        if "interactive" in message:
+            interactive = message["interactive"]
+            
+            if interactive["type"] == "list_reply":
+                option_id = interactive["list_reply"]["id"]
+                logger.info(f"📋 List selection: {option_id} from {phone_number}")
+                handle_interactive_message(phone_number, option_id)
+                
+            elif interactive["type"] == "button_reply":
+                button_id = interactive["button_reply"]["id"]
+                logger.info(f"🔘 Button click: {button_id} from {phone_number}")
+                handle_interactive_message(phone_number, button_id)
+            
+            return jsonify({"status": "interactive_handled"})
+        
+        # Handle text messages
+        if "text" in message:
+            text = message["text"]["body"].strip()
+            logger.info(f"💬 Text message: '{text}' from {phone_number}")
+            handle_text_message(phone_number, text)
+            return jsonify({"status": "text_handled"})
+        
+        # Handle location messages (could be used for pickup points)
+        if "location" in message:
+            logger.info(f"📍 Location received from {phone_number}")
+            # Could implement location-based services here
+            return jsonify({"status": "location_handled"})
+        
+        return jsonify({"status": "unhandled"})
+        
+    except Exception as e:
+        logger.error(f"🚨 Webhook error: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+def handle_interactive_message(phone_number, interaction_id):
+    """Handle interactive message responses"""
+    session = user_sessions.get(phone_number, {})
+    language = session.get('language', 'english')
+    
+    logger.info(f"🔄 Handling interaction: {interaction_id} for {phone_number}")
     
     # Language selection
     if interaction_id == "lang_english":
-        booking_sessions[phone_number] = {'language': 'english'}
-        return send_main_menu(phone_number, 'english')
+        user_sessions[phone_number] = {'language': 'english'}
+        send_main_menu(phone_number, 'english')
+    
     elif interaction_id == "lang_arabic":
-        booking_sessions[phone_number] = {'language': 'arabic'}  
-        return send_main_menu(phone_number, 'arabic')
+        user_sessions[phone_number] = {'language': 'arabic'}
+        send_main_menu(phone_number, 'arabic')
     
-    # Main menu interactions
-    if interaction_id == "book_cruise" or interaction_id == "book_cruise_ar":
-        return start_booking_flow(phone_number, language)
+    # Main menu
+    elif interaction_id == "book_cruise":
+        start_booking(phone_number, language)
     
-    elif interaction_id.startswith("cruise_"):
-        cruise_type = interaction_id.replace("cruise_", "")
-        if phone_number in booking_sessions:
-            booking_data = booking_sessions[phone_number]
-            booking_data['cruise_type'] = cruise_type
-            booking_data['step'] = 'payment_pending'
-            return request_payment(phone_number, booking_data, language)
-        return False
-    
-    # Info menu interactions
-    elif interaction_id in ["pricing", "pricing_ar"]:
-        if language == 'arabic':
+    elif interaction_id == "pricing":
+        if language == "arabic":
             message = """💰 *أسعار الرحلات*
 
-*رحلات الصباح:* 2.500 ريال للشخص
+*الصباح:* 2.500 ريال للشخص
 (9:00 صباحاً - 10:30 صباحاً)
 
-*رحلات الظهيرة:* 3.500 ريال للشخص  
+*الظهيرة:* 3.500 ريال للشخص  
 (1:30 ظهراً - 3:00 عصراً)
 
-*رحلات الغروب:* 4.500 ريال للشخص
+*الغروب:* 4.500 ريال للشخص
 (5:00 عصراً - 6:30 مساءً)
 
-*رحلات المساء:* 3.500 ريال للشخص
+*المساء:* 3.500 ريال للشخص
 (7:30 مساءً - 9:00 مساءً)
 
-*ملاحظة:* الرضع تحت سنتين مجاناً"""
+*الرضع:* مجاناً (أقل من سنتين)"""
         else:
             message = """💰 *Cruise Pricing*
 
-*Morning Cruise:* 2.500 OMR per person
+*Morning:* 2.500 OMR per person
 (9:00 AM - 10:30 AM)
 
-*Afternoon Cruise:* 3.500 OMR per person  
+*Afternoon:* 3.500 OMR per person  
 (1:30 PM - 3:00 PM) 
 
-*Sunset Cruise:* 4.500 OMR per person
+*Sunset:* 4.500 OMR per person
 (5:00 PM - 6:30 PM)
 
-*Evening Cruise:* 3.500 OMR per person
+*Evening:* 3.500 OMR per person
 (7:30 PM - 9:00 PM)
 
-*Note:* Infants below 2 years are free"""
+*Infants:* Free (below 2 years)"""
         
-        return send_whatsapp_message(phone_number, message)
+        send_whatsapp_message(phone_number, message)
+        send_main_menu(phone_number, language)
     
-    elif interaction_id in ["schedule", "schedule_ar"]:
-        if language == 'arabic':
+    elif interaction_id == "schedule":
+        if language == "arabic":
             message = """🕒 *جدول الرحلات*
 
 *الصباح:* 9:00 صباحاً - 10:30 صباحاً
@@ -858,11 +1447,12 @@ def handle_interaction(interaction_id, phone_number):
 
 ⏰ *Reporting Time:* 1 hour before cruise"""
         
-        return send_whatsapp_message(phone_number, message)
+        send_whatsapp_message(phone_number, message)
+        send_main_menu(phone_number, language)
     
-    elif interaction_id in ["contact", "contact_ar"]:
+    elif interaction_id == "contact":
         contact = CRUISE_CONFIG["contact"]
-        if language == 'arabic':
+        if language == "arabic":
             message = f"""📞 *معلومات الاتصال*
 
 *هاتف:* {contact['phone1']} | {contact['phone2']}
@@ -881,25 +1471,138 @@ def handle_interaction(interaction_id, phone_number):
 
 ⏰ *Working Hours:* 8:00 AM - 10:00 PM"""
         
-        return send_whatsapp_message(phone_number, message)
+        send_whatsapp_message(phone_number, message)
+        send_main_menu(phone_number, language)
     
-    return False
+    # Cruise type selection
+    elif interaction_id.startswith("cruise_"):
+        cruise_type = interaction_id.replace("cruise_", "")
+        if phone_number in user_sessions:
+            user_sessions[phone_number]['cruise_type'] = cruise_type
+            request_payment(phone_number, user_sessions[phone_number])
+    
+    # Payment method selection
+    elif interaction_id.startswith("payment_"):
+        if phone_number in user_sessions:
+            handle_payment_method_selection(phone_number, interaction_id, user_sessions[phone_number])
+    
+    # Payment confirmation
+    elif interaction_id == "confirm_booking":
+        if phone_number in user_sessions:
+            confirm_booking(phone_number, user_sessions[phone_number])
+    
+    elif interaction_id == "cancel_booking":
+        cancel_booking(phone_number, language)
 
-def get_user_language(phone_number):
-    """Get user's preferred language"""
-    session = booking_sessions.get(phone_number, {})
-    return session.get('language', 'english')
+def handle_text_message(phone_number, text):
+    """Handle text message responses with session timeout check"""
+    # Cleanup expired sessions
+    cleanup_expired_sessions()
+    
+    session = user_sessions.get(phone_number, {})
+    language = session.get('language', 'english')
+    
+    # Check for session expiration
+    if session and 'created_at' in session:
+        created_at = datetime.fromisoformat(session['created_at'])
+        if (datetime.now() - created_at).total_seconds() > (SESSION_TIMEOUT_MINUTES * 60):
+            send_whatsapp_message(phone_number, MESSAGES[language]["session_expired"])
+            del user_sessions[phone_number]
+            return
+    
+    # New user - send language menu
+    if not session and text.lower() in ["hi", "hello", "hey", "مرحبا", "اهلا", "السلام"]:
+        send_language_menu(phone_number)
+        return
+    
+    # Handle session expired
+    if not session:
+        send_language_menu(phone_number)
+        return
+    
+    # Handle booking flow
+    if session and session.get('step', '').startswith('awaiting_'):
+        handle_booking_step(phone_number, text, language, session)
+    elif session.get('step') == 'awaiting_payment_method':
+        # Handle direct text input for payment method selection
+        if text.lower() in ["whatsapp pay", "واتساب", "واتساب باي", "دفع واتساب"]:
+            handle_payment_method_selection(phone_number, "payment_whatsapp", session)
+        elif text.lower() in ["bank transfer", "تحويل بنكي", "بنك"]:
+            handle_payment_method_selection(phone_number, "payment_bank", session)
+        elif text.lower() in ["credit card", "بطاقة ائتمان", "بطاقة"]:
+            handle_payment_method_selection(phone_number, "payment_card", session)
+        else:
+            send_whatsapp_message(phone_number, MESSAGES[language]["invalid_input"])
+    else:
+        # Fallback to main menu
+        send_main_menu(phone_number, language)
 
 # ==============================
-# DASHBOARD API ENDPOINTS  
+# API ENDPOINTS
 # ==============================
 
-@app.route("/api/bookings", methods=["GET"])
-def get_bookings():
-    """Get all bookings for dashboard"""
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    """Health check endpoint"""
+    status = {
+        "status": "Sindbad Ship Cruises WhatsApp API 🚢",
+        "timestamp": datetime.now().isoformat(),
+        "whatsapp_configured": bool(WHATSAPP_TOKEN and WHATSAPP_PHONE_ID),
+        "sheets_available": sheet is not None,
+        "active_sessions": len(user_sessions),
+        "version": "3.0 - Enhanced with WhatsApp Payments",
+        "currency": CRUISE_CONFIG["currency"],
+        "max_capacity": CRUISE_CONFIG["max_capacity"]
+    }
+    return jsonify(status)
+
+@app.route("/api/debug/sheets", methods=["GET"])
+def debug_sheets():
+    """Debug Google Sheets connection"""
     try:
         if not sheet:
-            return jsonify({"error": "Google Sheets not configured"}), 500
+            return jsonify({"error": "Sheet not available"}), 500
+        
+        # Test read
+        records = sheet.get_all_records()
+        
+        # Test write
+        test_id = f"TEST_{int(time.time())}"
+        test_data = [
+            datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+            test_id,
+            "Test User",
+            "91234567",
+            "96812345678",
+            "2024-12-31",
+            "9:00 AM - 10:30 AM",
+            "Morning Cruise",
+            2, 1, 0, 3, 7.500,
+            'Paid', 'Test', 'TEST_123', 
+            datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+            'English', 'Confirmed', 'Test Record',
+            '', 'OMR'
+        ]
+        
+        sheet.append_row(test_data)
+        
+        return jsonify({
+            "status": "success",
+            "records_count": len(records),
+            "test_id": test_id,
+            "sheet_name": SHEET_NAME
+        })
+        
+    except Exception as e:
+        logger.error(f"Debug sheets error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/bookings", methods=["GET"])
+def get_all_bookings():
+    """Get all bookings"""
+    try:
+        if not sheet:
+            return jsonify({"error": "Sheets not available"}), 500
         
         records = sheet.get_all_records()
         return jsonify(records)
@@ -907,286 +1610,37 @@ def get_bookings():
         logger.error(f"Error getting bookings: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/active_sessions", methods=["GET"])
-def get_active_sessions():
-    """Get active chat sessions"""
-    return jsonify({"sessions": booking_sessions})
+@app.route("/api/sessions", methods=["GET"])
+def get_sessions():
+    """Get active sessions"""
+    return jsonify({"sessions": user_sessions})
 
-@app.route("/api/user_session/<phone>", methods=["GET"])
-def get_user_session(phone):
-    """Get user session info"""
-    session = booking_sessions.get(phone, {})
-    return jsonify({
-        "has_session": bool(session),
-        "step": session.get('step', 'no_session'),
-        "flow": "booking",
-        "name": session.get('name', 'Unknown'),
-        "tour_type": session.get('cruise_type', 'Not selected')
-    })
-
-@app.route("/api/capacity/<date>/<cruise_type>", methods=["GET"])
-def get_capacity(date, cruise_type):
-    """Get capacity for specific cruise"""
-    try:
-        current_capacity = get_cruise_capacity(date, cruise_type)
-        available = CRUISE_CONFIG["max_capacity"] - current_capacity
-        return jsonify({
-            "date": date,
-            "cruise_type": cruise_type,
-            "current_capacity": current_capacity,
-            "available_seats": available,
-            "max_capacity": CRUISE_CONFIG["max_capacity"]
-        })
-    except Exception as e:
-        logger.error(f"Error getting capacity: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/report/<date>", methods=["GET"])
-def generate_report(date):
-    """Generate CSV report for a specific date"""
-    try:
-        if not sheet:
-            return jsonify({"error": "Google Sheets not configured"}), 500
-            
-        all_records = sheet.get_all_records()
-        
-        # Filter bookings for the specific date with confirmed status
-        daily_bookings = []
-        total_guests = 0
-        total_revenue = 0
-        
-        for record in all_records:
-            if (record.get('Cruise Date') == date and 
-                record.get('Booking Status') == 'Confirmed' and
-                record.get('Payment Status') == 'Paid'):
-                
-                booking_data = {
-                    'booking_id': record.get('Booking ID', ''),
-                    'name': record.get('Customer Name', ''),
-                    'phone': record.get('Phone Number', ''),
-                    'cruise_type': record.get('Cruise Type', ''),
-                    'cruise_time': record.get('Cruise Time', ''),
-                    'adults': record.get('Adults Count', 0),
-                    'children': record.get('Children Count', 0),
-                    'infants': record.get('Infants Count', 0),
-                    'total_guests': record.get('Total Guests', 0),
-                    'total_amount': record.get('Total Amount', 0)
-                }
-                
-                daily_bookings.append(booking_data)
-                total_guests += int(record.get('Total Guests', 0))
-                total_revenue += float(record.get('Total Amount', 0))
-        
-        # Create CSV
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Write header
-        writer.writerow(['Sindbad Ship Cruises - Daily Report', date])
-        writer.writerow(['Generated on:', datetime.now().strftime('%Y-%m-%d %I:%M %p')])
-        writer.writerow([])
-        writer.writerow(['Report Summary:'])
-        writer.writerow(['Total Bookings:', len(daily_bookings)])
-        writer.writerow(['Total Guests:', total_guests])
-        writer.writerow(['Total Revenue:', f"{total_revenue:.3f} OMR"])
-        writer.writerow([])
-        writer.writerow(['Booking Details:'])
-        writer.writerow(['Booking ID', 'Name', 'Phone', 'Cruise Type', 'Time', 'Adults', 'Children', 'Infants', 'Total Guests', 'Amount'])
-        
-        # Write booking data
-        for booking in daily_bookings:
-            writer.writerow([
-                booking['booking_id'],
-                booking['name'],
-                booking['phone'],
-                booking['cruise_type'],
-                booking['cruise_time'],
-                booking['adults'],
-                booking['children'],
-                booking['infants'],
-                booking['total_guests'],
-                f"{booking['total_amount']} OMR"
-            ])
-        
-        # Convert to bytes and return as file
-        csv_bytes = output.getvalue().encode('utf-8')
-        output.close()
-        
-        return send_file(
-            io.BytesIO(csv_bytes),
-            as_attachment=True,
-            download_name=f"Sindbad_Report_{date}.csv",
-            mimetype='text/csv'
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating report: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/broadcast", methods=["POST"])
-def send_broadcast():
-    """Send broadcast messages to segments"""
+@app.route("/api/payment/webhook", methods=["POST"])
+def payment_webhook():
+    """
+    Endpoint for WhatsApp Payments webhook (if configured)
+    This is an alternative to the main webhook for payment updates
+    """
     try:
         data = request.get_json()
-        segment = data.get('segment', 'all')
-        message = data.get('message', '')
+        logger.info(f"🔔 Payment webhook received: {json.dumps(data, indent=2)}")
         
-        if not message:
-            return jsonify({"error": "Message is required"}), 400
+        # Handle payment updates
+        if data.get("object") == "business_management":
+            for entry in data.get("entry", []):
+                for change in entry.get("changes", []):
+                    if change.get("field") == "payments":
+                        payment_updates = change.get("value", {}).get("payment_updates", [])
+                        for update in payment_updates:
+                            payment_request_id = update.get("request_id")
+                            status = update.get("status")
+                            logger.info(f"🔔 Payment status update: {payment_request_id} -> {status}")
+                            handle_payment_status_update(payment_request_id, status)
         
-        if not sheet:
-            return jsonify({"error": "Google Sheets not configured"}), 500
-            
-        all_records = sheet.get_all_records()
-        recipients = []
-        
-        # Filter recipients based on segment
-        for record in all_records:
-            whatsapp_id = record.get('WhatsApp ID')
-            if whatsapp_id:
-                if segment == 'all':
-                    recipients.append(whatsapp_id)
-                elif segment == 'book_tour' and record.get('Booking Status') == 'Confirmed':
-                    recipients.append(whatsapp_id)
-                elif segment == 'pending' and record.get('Booking Status') == 'Pending':
-                    recipients.append(whatsapp_id)
-        
-        # Remove duplicates
-        recipients = list(set(recipients))
-        
-        # Send messages
-        sent = 0
-        failed = 0
-        
-        for recipient in recipients[:10]:  # Limit for demo
-            if send_whatsapp_message(recipient, message):
-                sent += 1
-            else:
-                failed += 1
-        
-        return jsonify({
-            "status": "success",
-            "sent": sent,
-            "failed": failed,
-            "total_recipients": len(recipients)
-        })
+        return jsonify({"status": "received"})
         
     except Exception as e:
-        logger.error(f"Error in broadcast: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/health", methods=["GET"])
-def health():
-    """Health check endpoint"""
-    status = {
-        "status": "Sindbad Ship Cruises WhatsApp API Active 🚢",
-        "timestamp": str(datetime.now()),
-        "whatsapp_configured": bool(WHATSAPP_TOKEN and WHATSAPP_PHONE_ID),
-        "sheets_available": sheet is not None,
-        "active_sessions": len(booking_sessions),
-        "pending_payments": len(payment_sessions),
-        "max_capacity": CRUISE_CONFIG["max_capacity"],
-        "version": "1.0 - Production Ready"
-    }
-    return jsonify(status)
-
-# ==============================
-# WEBHOOK ENDPOINTS  
-# ==============================
-
-@app.route("/webhook", methods=["GET"])
-def verify():
-    """Webhook verification"""
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-    
-    if token == VERIFY_TOKEN:
-        logger.info("✅ Webhook verified successfully")
-        return challenge
-    else:
-        logger.warning("❌ Webhook verification failed")
-        return "Verification token mismatch", 403
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    """Handle incoming WhatsApp messages"""
-    try:
-        data = request.get_json()
-        entry = data.get("entry", [{}])[0]
-        changes = entry.get("changes", [{}])[0]
-        value = changes.get("value", {})
-        messages = value.get("messages", [])
-        
-        if not messages:
-            return jsonify({"status": "no_message"})
-            
-        message = messages[0]
-        phone_number = message["from"]
-        
-        # Handle interactive messages
-        if "interactive" in message:
-            interactive_data = message["interactive"]
-            if interactive_data["type"] == "list_reply":
-                option_id = interactive_data["list_reply"]["id"]
-                logger.info(f"📋 List option selected: {option_id} by {phone_number}")
-                handle_interaction(option_id, phone_number)
-                return jsonify({"status": "list_handled"})
-        
-        # Handle text messages
-        if "text" in message:
-            text = message["text"]["body"].strip()
-            logger.info(f"💬 Text message: '{text}' from {phone_number}")
-            
-            language = get_user_language(phone_number)
-            session = booking_sessions.get(phone_number)
-            
-            # New user - send language selection
-            if not session and text.lower() in ["hi", "hello", "hey", "مرحبا", "اهلا", "السلام"]:
-                send_language_selection(phone_number)
-                return jsonify({"status": "language_selection_sent"})
-            
-            # Handle booking flow steps
-            if session and session.get('step') == 'awaiting_name':
-                ask_for_phone(phone_number, text, language)
-                return jsonify({"status": "name_received"})
-            
-            elif session and session.get('step') == 'awaiting_phone':
-                ask_for_date(phone_number, session['name'], text, language)
-                return jsonify({"status": "phone_received"})
-            
-            elif session and session.get('step') == 'awaiting_date':
-                ask_for_adults(phone_number, session['name'], session['phone'], text, language)
-                return jsonify({"status": "date_received"})
-            
-            elif session and session.get('step') == 'awaiting_adults':
-                if text.isdigit() and int(text) > 0:
-                    ask_for_children(phone_number, session['name'], session['phone'], session['cruise_date'], text, language)
-                    return jsonify({"status": "adults_received"})
-                else:
-                    send_whatsapp_message(phone_number, "Please enter a valid number of adults.")
-            
-            elif session and session.get('step') == 'awaiting_children':
-                if text.isdigit() and int(text) >= 0:
-                    ask_for_infants(phone_number, session['name'], session['phone'], session['cruise_date'], session['adults_count'], text, language)
-                    return jsonify({"status": "children_received"})
-                else:
-                    send_whatsapp_message(phone_number, "Please enter a valid number of children.")
-            
-            elif session and session.get('step') == 'awaiting_infants':
-                if text.isdigit() and int(text) >= 0:
-                    ask_for_cruise_type(phone_number, session['name'], session['phone'], session['cruise_date'], session['adults_count'], session['children_count'], text, language)
-                    return jsonify({"status": "infants_received"})
-                else:
-                    send_whatsapp_message(phone_number, "Please enter a valid number of infants.")
-            
-            # Fallback to main menu
-            send_main_menu(phone_number, language)
-            return jsonify({"status": "fallback_menu"})
-        
-        return jsonify({"status": "unhandled_message_type"})
-        
-    except Exception as e:
-        logger.error(f"🚨 Error in webhook: {str(e)}")
+        logger.error(f"🚨 Payment webhook error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ==============================
@@ -1201,9 +1655,24 @@ def after_request(response):
     return response
 
 # ==============================
-# RUN APPLICATION
+# APPLICATION START
 # ==============================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🚀 Starting Sindbad Ship Cruises WhatsApp Bot on port {port}")
+    logger.info(f"✅ WhatsApp Payments Integration: Enabled")
+    logger.info(f"✅ Google Sheets: Connected")
+    logger.info(f"✅ Session Timeout: {SESSION_TIMEOUT_MINUTES} minutes")
+    
+    # Start cleanup timer (run every 10 minutes)
+    import threading
+    def cleanup_scheduler():
+        while True:
+            time.sleep(600)  # 10 minutes
+            cleanup_expired_sessions()
+    
+    cleanup_thread = threading.Thread(target=cleanup_scheduler, daemon=True)
+    cleanup_thread.start()
+    
     app.run(host="0.0.0.0", port=port, debug=False)
