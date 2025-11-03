@@ -715,11 +715,10 @@
     </div>
 
     <script>
-        // Configuration
+        // Configuration for production
         const CONFIG = {
-            API_BASE_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-                ? 'http://localhost:5000' 
-                : window.location.origin,
+            // Use your Render backend URL
+            API_BASE_URL: 'https://sindbad-ship-cruises-chatbot.onrender.com',
             REFRESH_INTERVAL: 30000,
             ITEMS_PER_PAGE: 10,
             MAX_CAPACITY: 135,
@@ -762,22 +761,35 @@
         // Core Data Functions
         async function loadAllData() {
             try {
-                const [bookingsResponse, sessionsResponse] = await Promise.all([
-                    fetch(`${CONFIG.API_BASE_URL}/api/bookings`).catch(error => {
-                        throw new Error(`Failed to fetch bookings: ${error.message}`);
-                    }),
-                    fetch(`${CONFIG.API_BASE_URL}/api/active_sessions`).catch(error => {
-                        console.warn('Could not fetch active sessions:', error);
-                        return { ok: true, json: () => Promise.resolve({ sessions: {} }) };
-                    })
-                ]);
+                console.log('🔄 Loading data from:', CONFIG.API_BASE_URL);
                 
+                // Test basic connection first
+                const healthResponse = await fetch(`${CONFIG.API_BASE_URL}/api/health`);
+                if (!healthResponse.ok) {
+                    throw new Error(`Server health check failed: ${healthResponse.status}`);
+                }
+                console.log('✅ Health check passed');
+
+                // Load bookings
+                const bookingsResponse = await fetch(`${CONFIG.API_BASE_URL}/api/bookings`);
                 if (!bookingsResponse.ok) {
-                    throw new Error(`HTTP error! status: ${bookingsResponse.status}`);
+                    throw new Error(`Failed to fetch bookings: ${bookingsResponse.status}`);
                 }
                 
                 const bookings = await bookingsResponse.json();
-                const sessions = await sessionsResponse.json();
+                console.log('✅ Bookings loaded:', bookings.length);
+                
+                // Try to load sessions (optional - might not exist yet)
+                let sessions = { sessions: {} };
+                try {
+                    const sessionsResponse = await fetch(`${CONFIG.API_BASE_URL}/api/active_sessions`);
+                    if (sessionsResponse.ok) {
+                        sessions = await sessionsResponse.json();
+                        console.log('✅ Sessions loaded');
+                    }
+                } catch (sessionError) {
+                    console.warn('Sessions endpoint not available:', sessionError);
+                }
                 
                 // Map the data to match our Google Sheets structure
                 appState.bookings = Array.isArray(bookings) ? bookings.map(booking => ({
@@ -822,22 +834,26 @@
                 appState.lastMessageId = 0;
                 
                 // Get user session info
-                const sessionResponse = await fetch(`${CONFIG.API_BASE_URL}/api/user_session/${phoneNumber}`);
-                if (sessionResponse.ok) {
-                    const sessionInfo = await sessionResponse.json();
-                    
-                    document.getElementById('chatUserName').textContent = name || 'Customer';
-                    document.getElementById('chatUserPhone').textContent = phoneNumber;
-                    
-                    // Update session status
-                    const statusElement = document.getElementById('chatSessionStatus');
-                    if (sessionInfo.has_session) {
-                        statusElement.textContent = `${sessionInfo.step.replace('awaiting_', '')} - ${sessionInfo.flow}`;
-                        statusElement.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full';
-                    } else {
-                        statusElement.textContent = 'No active session';
-                        statusElement.className = 'text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full';
+                try {
+                    const sessionResponse = await fetch(`${CONFIG.API_BASE_URL}/api/user_session/${phoneNumber}`);
+                    if (sessionResponse.ok) {
+                        const sessionInfo = await sessionResponse.json();
+                        
+                        document.getElementById('chatUserName').textContent = name || 'Customer';
+                        document.getElementById('chatUserPhone').textContent = phoneNumber;
+                        
+                        // Update session status
+                        const statusElement = document.getElementById('chatSessionStatus');
+                        if (sessionInfo.has_session) {
+                            statusElement.textContent = `${sessionInfo.step.replace('awaiting_', '')} - ${sessionInfo.flow}`;
+                            statusElement.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full';
+                        } else {
+                            statusElement.textContent = 'No active session';
+                            statusElement.className = 'text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full';
+                        }
                     }
+                } catch (sessionError) {
+                    console.warn('Could not load session info:', sessionError);
                 }
                 
                 // Load complete chat history

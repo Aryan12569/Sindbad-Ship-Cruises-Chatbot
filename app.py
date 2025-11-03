@@ -19,7 +19,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=[
+    "http://localhost:3000",
+    "http://localhost:5000", 
+    "https://sindbaddashboard.netlify.app",
+    "https://*.netlify.app"
+])
 
 # ==============================
 # CONFIGURATION
@@ -154,7 +159,7 @@ MESSAGES = {
         "main_menu": "🌊 *Sindbad Ship Cruises* 🚢\n\n*Cruise Features:*\n• 🛳️ Luxury sea cruise\n• ☕ Cafe on board\n• 🌅 Stunning sea views\n• 🎵 Music & entertainment\n\nPlease choose from the menu:",
         "booking_start": "📝 *Let's Book Your Cruise!* 🎫\n\nI'll help you book your sea cruise. 🚢\n\nFirst, please send me your:\n\n👤 *Full Name*\n\n*Example:*\nAhmed Al Harthy",
         "ask_phone": "Perfect, {}! 👋\n\nNow please send me your:\n\n📞 *Phone Number*\n\n*Example:*\n91234567",
-        "ask_date": "📅 *Cruise Date*\n\nPlease send your *preferred date* for the cruise:\n\n📋 *Format Examples:*\n• **Tomorrow**\n• **October 29**\n• **Next Friday**\n• **15 November**\n• **2024-12-25**",
+        "ask_date": "📅 *Cruise Date*\n\nPlease send your *preferred date* for the cruise in *DD/MM/YYYY* format:\n\n📋 *Format Examples:*\n• **23/11/2024** (23rd November 2024)\n• **15/12/2024** (15th December 2024)\n• **01/01/2025** (1st January 2025)\n• **30/06/2025** (30th June 2025)\n\n*Please use exact DD/MM/YYYY format only*",
         "ask_adults": "👥 *Number of Adults*\n\nHow many *adults* (12 years and above) will be joining?\n\nPlease send the number:\n*Examples:* 2, 4, 6",
         "ask_children": "👶 *Number of Children*\n\nAdults: {}\n\nHow many *children* (2-11 years) will be joining?\n\nPlease send the number:\n*Examples:* 0, 1, 2",
         "ask_infants": "🍼 *Number of Infants*\n\nAdults: {}\nChildren: {}\n\nHow many *infants* (below 2 years) will be joining?\n\n*Note:* Infants are free\n\nPlease send the number:\n*Examples:* 0, 1, 2",
@@ -163,14 +168,15 @@ MESSAGES = {
         "payment_simulation": "💳 *Payment Simulation - TEST MODE*\n\nSince this is a test bot, we'll simulate payment.\n\n*Total Amount: {} OMR*\nBooking ID: {}\n\nClick 'Simulate Payment' to complete booking:",
         "payment_confirmed": "🎉 *Booking Confirmed!* ✅\n\nThank you {}! Your cruise has been booked successfully. 🚢\n\n📋 *Booking Details:*\n🆔 Booking ID: {}\n👤 Name: {}\n📞 Phone: {}\n📅 Date: {}\n🕒 Time: {}\n🚢 Cruise Type: {}\n👥 Guests: {} total\n   • {} adults\n   • {} children\n   • {} infants\n💰 Amount: {} OMR\n💳 Payment: Simulated (Test Mode)\n\n⏰ *Reporting Time:* 1 hour before cruise\n📍 *Location:* {}\n📞 *For inquiries:* {} | {}\n\nWe wish you a wonderful cruise experience! 🌊",
         "booking_cancelled": "❌ Booking cancelled. We welcome you anytime! 🌊",
-        "invalid_input": "❌ Invalid input. Please try again."
+        "invalid_input": "❌ Invalid input. Please try again.",
+        "invalid_date": "❌ Invalid date format. Please use DD/MM/YYYY format only.\n\n*Examples:*\n• 23/11/2024\n• 15/12/2024\n• 01/01/2025"
     },
     "arabic": {
         "welcome": "🌊 مرحباً بكم في رحلات السندباد البحرية!\n\nاختر لغتك المفضلة:",
         "main_menu": "🌊 *رحلات السندباد البحرية* 🚢\n\n*مميزات الرحلة:*\n• 🛳️ رحلة بحرية فاخرة\n• ☕ مقهى على متن السفينة\n• 🌅 مناظر بحرية خلابة\n• 🎵 موسيقى وترفيه\n\nاختر من القائمة:",
         "booking_start": "📝 *لنحجز رحلتك!* 🎫\n\nسأساعدك في حجز رحلتك البحرية. 🚢\n\nأولاً، الرجاء إرسال:\n\n👤 *الاسم الكامل*\n\n*مثال:*\nأحمد الحارثي",
         "ask_phone": "ممتاز، {}! 👋\n\nالآن الرجاء إرسال:\n\n📞 *رقم الهاتف*\n\n*مثال:*\n91234567",
-        "ask_date": "📅 *تاريخ الرحلة*\n\nالرجاء إرسال *التاريخ المفضل* للرحلة:\n\n📋 *أمثلة على التنسيق:*\n• **غداً**\n• **29 أكتوبر**\n• **الجمعة القادمة**\n• **15 نوفمبر**\n• **2024-12-25**",
+        "ask_date": "📅 *تاريخ الرحلة*\n\nالرجاء إرسال *التاريخ المفضل* للرحلة بصيغة *DD/MM/YYYY*:\n\n📋 *أمثلة على التنسيق:*\n• **23/11/2024** (23 نوفمبر 2024)\n• **15/12/2024** (15 ديسمبر 2024)\n• **01/01/2025** (1 يناير 2025)\n• **30/06/2025** (30 يونيو 2025)\n\n*الرجاء استخدام صيغة DD/MM/YYYY فقط*",
         "ask_adults": "👥 *عدد البالغين*\n\nكم عدد *البالغين* (12 سنة فما فوق) الذين سينضمون؟\n\nالرجاء إرسال الرقم:\n*أمثلة:* 2, 4, 6",
         "ask_children": "👶 *عدد الأطفال*\n\nالبالغين: {}\n\nكم عدد *الأطفال* (2-11 سنة) الذين سينضمون؟\n\nالرجاء إرسال الرقم:\n*أمثلة:* 0, 1, 2",
         "ask_infants": "🍼 *عدد الرضع*\n\nالبالغين: {}\nالأطفال: {}\n\nكم عدد *الرضع* (أقل من سنتين) الذين سينضمون؟\n\n*ملاحظة:* الرضع مجاناً\n\nالرجاء إرسال الرقم:\n*أمثلة:* 0, 1, 2",
@@ -179,9 +185,75 @@ MESSAGES = {
         "payment_simulation": "💳 *محاكاة الدفع - وضع الاختبار*\n\nنظراً لأن هذا بوت اختبار، سنقوم بمحاكاة الدفع.\n\n*المبلغ الإجمالي: {} ريال عماني*\nرقم الحجز: {}\n\nانقر 'محاكاة الدفع' لإكمال الحجز:",
         "payment_confirmed": "🎉 *تم تأكيد الحجز!* ✅\n\nشكراً {}! تم حجز رحلتك بنجاح. 🚢\n\n📋 *تفاصيل الحجز:*\n🆔 رقم الحجز: {}\n👤 الاسم: {}\n📞 الهاتف: {}\n📅 التاريخ: {}\n🕒 الوقت: {}\n🚢 نوع الرحلة: {}\n👥 الضيوف: {} إجمالاً\n   • {} بالغين\n   • {} أطفال\n   • {} رضع\n💰 المبلغ: {} ريال عماني\n💳 الدفع: محاكاة (وضع الاختبار)\n\n⏰ *وقت الحضور:* ساعة قبل الرحلة\n📍 *موقعنا:* {}\n📞 *للاستفسار:* {} | {}\n\nنتمنى لكم رحلة بحرية ممتعة! 🌊",
         "booking_cancelled": "❌ تم إلغاء الحجز. نرحب بك في أي وقت! 🌊",
-        "invalid_input": "❌ إدخال غير صالح. يرجى المحاولة مرة أخرى."
+        "invalid_input": "❌ إدخال غير صالح. يرجى المحاولة مرة أخرى.",
+        "invalid_date": "❌ تنسيق تاريخ غير صالح. يرجى استخدام صيغة DD/MM/YYYY فقط.\n\n*أمثلة:*\n• 23/11/2024\n• 15/12/2024\n• 01/01/2025"
     }
 }
+
+# ==============================
+# DATE VALIDATION FUNCTIONS
+# ==============================
+
+def validate_dd_mm_yyyy_date(date_string):
+    """
+    Validate date in DD/MM/YYYY format and ensure it's a future date
+    Returns: (is_valid, formatted_date, error_message)
+    """
+    try:
+        # Check if it matches DD/MM/YYYY pattern
+        pattern = r'^\d{1,2}/\d{1,2}/\d{4}$'
+        if not re.match(pattern, date_string):
+            return False, None, "Date must be in DD/MM/YYYY format"
+        
+        # Split the date
+        day, month, year = map(int, date_string.split('/'))
+        
+        # Validate date components
+        if month < 1 or month > 12:
+            return False, None, "Month must be between 01 and 12"
+        
+        if day < 1 or day > 31:
+            return False, None, "Day must be between 01 and 31"
+        
+        # Check for valid day in month
+        if month in [4, 6, 9, 11] and day > 30:
+            return False, None, f"April, June, September, and November have only 30 days"
+        
+        if month == 2:
+            # Leap year check
+            if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):
+                if day > 29:
+                    return False, None, f"February {year} has only 29 days (leap year)"
+            else:
+                if day > 28:
+                    return False, None, f"February {year} has only 28 days"
+        
+        # Create date object
+        input_date = datetime(year, month, day)
+        
+        # Check if date is in the future
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        if input_date < today:
+            return False, None, "Please select a future date"
+        
+        # Format as DD/MM/YYYY for consistency
+        formatted_date = f"{day:02d}/{month:02d}/{year}"
+        return True, formatted_date, None
+        
+    except ValueError as e:
+        return False, None, f"Invalid date: {str(e)}"
+    except Exception as e:
+        return False, None, f"Date validation error: {str(e)}"
+
+def parse_date_for_sheets(date_string):
+    """
+    Convert DD/MM/YYYY to a format suitable for Google Sheets
+    """
+    try:
+        day, month, year = map(int, date_string.split('/'))
+        return f"{day:02d}/{month:02d}/{year}"
+    except:
+        return date_string
 
 # ==============================
 # HELPER FUNCTIONS
@@ -260,9 +332,11 @@ def get_cruise_capacity(date, cruise_type):
         total_guests = 0
         
         for record in records:
-            if (str(record.get('Cruise Date', '')).strip() == str(date).strip() and 
-                str(record.get('Cruise Type', '')).strip() == str(cruise_type).strip() and
-                str(record.get('Booking Status', '')).strip().lower() != 'cancelled'):
+            record_date = record.get('Cruise Date', '')
+            # Handle both DD/MM/YYYY and other formats in existing data
+            if str(record_date).strip() == str(date).strip() and \
+               str(record.get('Cruise Type', '')).strip() == str(cruise_type).strip() and \
+               str(record.get('Booking Status', '')).strip().lower() != 'cancelled':
                 total_guests += int(record.get('Total Guests', 0))
         
         return total_guests
@@ -338,7 +412,7 @@ def save_booking_to_sheets(booking_data, language, payment_status="Paid", paymen
             booking_data['name'],
             booking_data['phone'],
             booking_data['whatsapp_id'],
-            booking_data['cruise_date'],
+            booking_data['cruise_date'],  # This will now be in DD/MM/YYYY format
             cruise_info['time'],
             cruise_info['name_en'],
             str(booking_data['adults_count']),
@@ -469,7 +543,22 @@ def handle_booking_step(to, text, language, session):
         return send_whatsapp_message(to, message)
     
     elif step == 'awaiting_date':
-        session.update({'step': 'awaiting_adults', 'cruise_date': text})
+        # Validate date format
+        is_valid, formatted_date, error_msg = validate_dd_mm_yyyy_date(text)
+        
+        if not is_valid:
+            # Send specific date format error
+            error_message = MESSAGES[language]["invalid_date"]
+            if error_msg:
+                error_message += f"\n\n❌ {error_msg}"
+            send_whatsapp_message(to, error_message)
+            return False
+        
+        # Store the validated and formatted date
+        session.update({
+            'step': 'awaiting_adults', 
+            'cruise_date': formatted_date
+        })
         message = MESSAGES[language]["ask_adults"]
         return send_whatsapp_message(to, message)
     
@@ -506,7 +595,7 @@ def send_cruise_type_menu(to, language, session):
     children = session['children_count']
     infants = session['infants_count']
     total_guests = adults + children + infants
-    date = session['cruise_date']
+    date = session['cruise_date']  # This is now in DD/MM/YYYY format
     
     # Check capacity
     available_cruises = []
@@ -593,7 +682,7 @@ def request_payment(to, session):
         'name': session['name'],
         'phone': session['phone'],
         'whatsapp_id': to,
-        'cruise_date': session['cruise_date'],
+        'cruise_date': session['cruise_date'],  # Already in DD/MM/YYYY format
         'cruise_type': cruise_type,
         'adults_count': session['adults_count'],
         'children_count': session['children_count'],
@@ -652,7 +741,7 @@ def confirm_booking(to, session):
             booking_data['booking_id'],
             booking_data['name'],
             booking_data['phone'],
-            booking_data['cruise_date'],
+            booking_data['cruise_date'],  # Already in DD/MM/YYYY format
             cruise_info['time_ar'],
             cruise_info['name_ar'],
             booking_data['total_guests'],
@@ -670,7 +759,7 @@ def confirm_booking(to, session):
             booking_data['booking_id'],
             booking_data['name'],
             booking_data['phone'],
-            booking_data['cruise_date'],
+            booking_data['cruise_date'],  # Already in DD/MM/YYYY format
             cruise_info['time'],
             cruise_info['name_en'],
             booking_data['total_guests'],
@@ -700,6 +789,16 @@ def cancel_booking(to, language):
 # ==============================
 # DASHBOARD API ENDPOINTS
 # ==============================
+
+@app.route("/", methods=["GET"])
+def home():
+    """Home endpoint"""
+    return jsonify({
+        "message": "Sindbad Ship Cruises WhatsApp API is running!",
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0"
+    })
 
 @app.route("/api/active_sessions", methods=["GET"])
 def get_active_sessions():
@@ -837,7 +936,7 @@ def send_broadcast():
         for record in records:
             if segment == 'all':
                 recipients.append(record.get('WhatsApp ID'))
-            elif segment == 'book_tour' and record.get('Booking Status') == 'Confirmed':
+            elif segment == 'confirmed' and record.get('Booking Status') == 'Confirmed':
                 recipients.append(record.get('WhatsApp ID'))
             elif segment == 'pending' and record.get('Booking Status') == 'Pending':
                 recipients.append(record.get('WhatsApp ID'))
@@ -1050,7 +1149,7 @@ def debug_sheets():
             "Test User",
             "91234567",
             "96812345678",
-            "2024-12-31",
+            "23/11/2024",  # Now in DD/MM/YYYY format
             "9:00 AM - 10:30 AM",
             "Morning Cruise",
             "2", "1", "0", "3", "7.500",
