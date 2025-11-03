@@ -404,7 +404,7 @@
                                 <input type="text" id="searchBookings" placeholder="Search bookings..." class="pl-10 pr-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900">
                                 <i data-feather="search" class="w-4 h-4 absolute left-3 top-3 text-gray-400"></i>
                             </div>
-                            <button id="exportPDF" class="flex items-center space-x-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-xl hover:bg-blue-200 transition-all">
+                            <button id="exportCSV" class="flex items-center space-x-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-xl hover:bg-blue-200 transition-all">
                                 <i data-feather="download" class="w-4 h-4"></i>
                                 <span>Export CSV</span>
                             </button>
@@ -537,7 +537,7 @@
                                     <label class="block text-gray-700 mb-2 font-medium">Select Segment</label>
                                     <select id="segmentSelect" class="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900">
                                         <option value="all">All Bookings</option>
-                                        <option value="book_tour">Confirmed Bookings</option>
+                                        <option value="confirmed">Confirmed Bookings</option>
                                         <option value="pending">Pending Bookings</option>
                                     </select>
                                 </div>
@@ -584,20 +584,6 @@
                                 <button id="sendBroadcastBtn" class="flex-1 sindbad-gradient text-white py-3 px-6 rounded-xl font-medium hover:opacity-90 transition-all shadow-lg">
                                     Send Broadcast Message
                                 </button>
-                            </div>
-
-                            <!-- Broadcast Progress -->
-                            <div id="broadcastProgress" class="hidden">
-                                <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                                    <div class="flex items-center justify-between mb-2">
-                                        <span class="text-sm font-medium text-blue-700">Sending messages...</span>
-                                        <span id="progressText" class="text-sm text-blue-600">0%</span>
-                                    </div>
-                                    <div class="w-full bg-blue-200 rounded-full h-2">
-                                        <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
-                                    </div>
-                                    <div id="progressDetails" class="text-xs text-blue-600 mt-2"></div>
-                                </div>
                             </div>
 
                             <!-- Broadcast Results -->
@@ -733,7 +719,7 @@
         const CONFIG = {
             API_BASE_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
                 ? 'http://localhost:5000' 
-                : 'https://your-render-app.onrender.com',
+                : window.location.origin,
             REFRESH_INTERVAL: 30000,
             ITEMS_PER_PAGE: 10,
             MAX_CAPACITY: 135,
@@ -777,10 +763,10 @@
         async function loadAllData() {
             try {
                 const [bookingsResponse, sessionsResponse] = await Promise.all([
-                    fetch(CONFIG.API_BASE_URL + '/api/bookings').catch(error => {
+                    fetch(`${CONFIG.API_BASE_URL}/api/bookings`).catch(error => {
                         throw new Error(`Failed to fetch bookings: ${error.message}`);
                     }),
-                    fetch(CONFIG.API_BASE_URL + '/api/active_sessions').catch(error => {
+                    fetch(`${CONFIG.API_BASE_URL}/api/active_sessions`).catch(error => {
                         console.warn('Could not fetch active sessions:', error);
                         return { ok: true, json: () => Promise.resolve({ sessions: {} }) };
                     })
@@ -809,7 +795,7 @@
                     totalGuests: parseInt(booking['Total Guests']) || 0,
                     totalAmount: parseFloat(booking['Total Amount']) || 0,
                     paymentStatus: booking['Payment Status'] || '',
-                    bookingStatus: booking['Booking Status'] || '',
+                    bookingStatus: booking['Booking Status'] || 'Pending',
                     language: booking['Language'] || 'English'
                 })) : [];
                 
@@ -837,19 +823,21 @@
                 
                 // Get user session info
                 const sessionResponse = await fetch(`${CONFIG.API_BASE_URL}/api/user_session/${phoneNumber}`);
-                const sessionInfo = await sessionResponse.json();
-                
-                document.getElementById('chatUserName').textContent = name || 'Customer';
-                document.getElementById('chatUserPhone').textContent = phoneNumber;
-                
-                // Update session status
-                const statusElement = document.getElementById('chatSessionStatus');
-                if (sessionInfo.has_session) {
-                    statusElement.textContent = `${sessionInfo.step.replace('awaiting_', '')} - ${sessionInfo.flow}`;
-                    statusElement.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full';
-                } else {
-                    statusElement.textContent = 'No active session';
-                    statusElement.className = 'text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full';
+                if (sessionResponse.ok) {
+                    const sessionInfo = await sessionResponse.json();
+                    
+                    document.getElementById('chatUserName').textContent = name || 'Customer';
+                    document.getElementById('chatUserPhone').textContent = phoneNumber;
+                    
+                    // Update session status
+                    const statusElement = document.getElementById('chatSessionStatus');
+                    if (sessionInfo.has_session) {
+                        statusElement.textContent = `${sessionInfo.step.replace('awaiting_', '')} - ${sessionInfo.flow}`;
+                        statusElement.className = 'text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full';
+                    } else {
+                        statusElement.textContent = 'No active session';
+                        statusElement.className = 'text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full';
+                    }
                 }
                 
                 // Load complete chat history
@@ -1032,12 +1020,12 @@
                                 <p class="text-sm text-gray-600">${phone}</p>
                             </div>
                             <span class="session-badge ${session.flow === 'booking' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
-                                ${session.flow}
+                                ${session.flow || 'unknown'}
                             </span>
                         </div>
                         <div class="text-sm text-gray-600 mb-3">
-                            <p>Step: <span class="font-medium">${session.step.replace('awaiting_', '')}</span></p>
-                            ${session.tour_type !== 'Not selected' ? `<p>Cruise: <span class="font-medium">${session.tour_type}</span></p>` : ''}
+                            <p>Step: <span class="font-medium">${(session.step || 'no_step').replace('awaiting_', '')}</span></p>
+                            ${session.cruise_type ? `<p>Cruise: <span class="font-medium">${session.cruise_type}</span></p>` : ''}
                         </div>
                         <button onclick="openChat('${phone}', '${session.name || 'Customer'}')" 
                                 class="w-full sindbad-gradient text-white py-2 rounded-lg hover:opacity-90 transition-all text-sm font-medium">
@@ -1053,7 +1041,7 @@
 
         async function refreshActiveSessions() {
             try {
-                const response = await fetch(CONFIG.API_BASE_URL + '/api/active_sessions');
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/active_sessions`);
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -1080,7 +1068,7 @@
                 case 'all':
                     count = appState.bookings.length;
                     break;
-                case 'book_tour':
+                case 'confirmed':
                     count = appState.bookings.filter(b => b.bookingStatus === 'Confirmed').length;
                     break;
                 case 'pending':
@@ -1123,7 +1111,7 @@
             showLoading();
             
             try {
-                const response = await fetch(CONFIG.API_BASE_URL + '/api/broadcast', {
+                const response = await fetch(`${CONFIG.API_BASE_URL}/api/broadcast`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1160,27 +1148,6 @@
             }
         }
 
-        function showPreview() {
-            const message = document.getElementById('broadcastMessage').value.trim();
-            if (!message) {
-                showError('Preview Failed', 'Please enter a message to preview.');
-                return;
-            }
-            
-            document.getElementById('previewContent').textContent = message;
-            document.getElementById('previewModal').classList.remove('hidden');
-        }
-
-        function hidePreview() {
-            document.getElementById('previewModal').classList.add('hidden');
-        }
-
-        function confirmSend() {
-            hidePreview();
-            sendBroadcast();
-        }
-
-        // Sample Messages
         function loadSampleMessage(type) {
             const messages = {
                 special_offer: `🌊 *Sindbad Ship Cruises - Special Offer!* ☀️
@@ -1401,53 +1368,55 @@ We can't wait to welcome you aboard! 🌊`
             for (const cruise of cruiseTypes) {
                 try {
                     const response = await fetch(`${CONFIG.API_BASE_URL}/api/capacity/${date}/${cruise.name}`);
-                    const capacityData = await response.json();
-                    
-                    const currentCapacity = capacityData.current_capacity || 0;
-                    const availableSeats = capacityData.available_seats || 0;
-                    const utilization = Math.round((currentCapacity / CONFIG.MAX_CAPACITY) * 100);
-                    
-                    let cardClass = 'stats-card rounded-2xl shadow-lg p-6 card-hover';
-                    if (utilization >= 90) {
-                        cardClass = 'capacity-full rounded-2xl shadow-lg p-6 card-hover';
-                    } else if (utilization >= 70) {
-                        cardClass = 'capacity-warning rounded-2xl shadow-lg p-6 card-hover';
+                    if (response.ok) {
+                        const capacityData = await response.json();
+                        
+                        const currentCapacity = capacityData.current_capacity || 0;
+                        const availableSeats = capacityData.available_seats || 0;
+                        const utilization = Math.round((currentCapacity / CONFIG.MAX_CAPACITY) * 100);
+                        
+                        let cardClass = 'stats-card rounded-2xl shadow-lg p-6 card-hover';
+                        if (utilization >= 90) {
+                            cardClass = 'capacity-full rounded-2xl shadow-lg p-6 card-hover';
+                        } else if (utilization >= 70) {
+                            cardClass = 'capacity-warning rounded-2xl shadow-lg p-6 card-hover';
+                        }
+                        
+                        cardsHTML += `
+                            <div class="${cardClass}">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <p class="text-gray-500 text-sm font-medium">${cruise.name}</p>
+                                        <p class="text-xs text-gray-400">${cruise.time}</p>
+                                    </div>
+                                    <div class="p-2 rounded-lg bg-blue-100">
+                                        <i data-feather="users" class="w-4 h-4 text-blue-900"></i>
+                                    </div>
+                                </div>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-gray-600">Booked:</span>
+                                        <span class="font-medium">${currentCapacity} / ${CONFIG.MAX_CAPACITY}</span>
+                                    </div>
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-gray-600">Available:</span>
+                                        <span class="font-medium ${availableSeats < 20 ? 'text-red-600' : 'text-green-600'}">${availableSeats} seats</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2">
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                             style="width: ${utilization}%"></div>
+                                    </div>
+                                    <div class="text-xs text-gray-500 text-center">${utilization}% utilized</div>
+                                </div>
+                            </div>
+                        `;
                     }
-                    
-                    cardsHTML += `
-                        <div class="${cardClass}">
-                            <div class="flex justify-between items-start mb-4">
-                                <div>
-                                    <p class="text-gray-500 text-sm font-medium">${cruise.name}</p>
-                                    <p class="text-xs text-gray-400">${cruise.time}</p>
-                                </div>
-                                <div class="p-2 rounded-lg bg-blue-100">
-                                    <i data-feather="users" class="w-4 h-4 text-blue-900"></i>
-                                </div>
-                            </div>
-                            <div class="space-y-2">
-                                <div class="flex justify-between text-sm">
-                                    <span class="text-gray-600">Booked:</span>
-                                    <span class="font-medium">${currentCapacity} / ${CONFIG.MAX_CAPACITY}</span>
-                                </div>
-                                <div class="flex justify-between text-sm">
-                                    <span class="text-gray-600">Available:</span>
-                                    <span class="font-medium ${availableSeats < 20 ? 'text-red-600' : 'text-green-600'}">${availableSeats} seats</span>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2">
-                                    <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                                         style="width: ${utilization}%"></div>
-                                </div>
-                                <div class="text-xs text-gray-500 text-center">${utilization}% utilized</div>
-                            </div>
-                        </div>
-                    `;
                 } catch (error) {
                     console.error(`Error fetching capacity for ${cruise.name}:`, error);
                 }
             }
             
-            capacityCards.innerHTML = cardsHTML;
+            capacityCards.innerHTML = cardsHTML || '<div class="col-span-4 text-center text-gray-500">No capacity data available</div>';
             feather.replace();
         }
 
@@ -1550,6 +1519,11 @@ We can't wait to welcome you aboard! 🌊`
                 window.cruiseChartInstance.destroy();
             }
 
+            if (Object.keys(cruiseTypes).length === 0) {
+                document.getElementById('cruiseChartContainer').innerHTML = '<p class="text-gray-500">No data available</p>';
+                return;
+            }
+
             window.cruiseChartInstance = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
@@ -1595,6 +1569,11 @@ We can't wait to welcome you aboard! 🌊`
 
             if (window.statusChartInstance) {
                 window.statusChartInstance.destroy();
+            }
+
+            if (Object.values(statusCounts).every(count => count === 0)) {
+                document.getElementById('statusChartContainer').innerHTML = '<p class="text-gray-500">No data available</p>';
+                return;
             }
 
             window.statusChartInstance = new Chart(ctx, {
@@ -1781,13 +1760,21 @@ We can't wait to welcome you aboard! 🌊`
                 searchInput.addEventListener('input', searchBookings);
             }
             
-            // PDF Export
-            document.getElementById('exportPDF').addEventListener('click', exportToCSV);
+            // CSV Export
+            document.getElementById('exportCSV').addEventListener('click', exportToCSV);
             
             // Broadcast functionality
             document.getElementById('segmentSelect').addEventListener('change', updateRecipientCount);
             document.getElementById('broadcastMessage').addEventListener('input', updateCharCount);
             document.getElementById('sendBroadcastBtn').addEventListener('click', sendBroadcast);
+            document.getElementById('previewBroadcast').addEventListener('click', () => {
+                const message = document.getElementById('broadcastMessage').value.trim();
+                if (!message) {
+                    showError('Preview Failed', 'Please enter a message to preview.');
+                    return;
+                }
+                alert('Preview:\n\n' + message);
+            });
             
             // Chat functionality
             document.getElementById('closeChat').addEventListener('click', closeChat);

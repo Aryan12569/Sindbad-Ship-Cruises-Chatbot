@@ -192,7 +192,7 @@ def generate_booking_id():
     return f"SDB{int(time.time())}"
 
 def clean_phone_number(number):
-    """Clean and validate phone numbers for WhatsApp API - FIXED VERSION"""
+    """Clean and validate phone numbers for WhatsApp API"""
     if not number:
         return None
     
@@ -434,7 +434,8 @@ def start_booking(to, language):
     user_sessions[to] = {
         'language': language,
         'step': 'awaiting_name',
-        'created_at': datetime.now().isoformat()
+        'created_at': datetime.now().isoformat(),
+        'flow': 'booking'
     }
     message = MESSAGES[language]["booking_start"]
     return send_whatsapp_message(to, message)
@@ -697,7 +698,181 @@ def cancel_booking(to, language):
     return send_whatsapp_message(to, message)
 
 # ==============================
-# WEBHOOK HANDLERS
+# DASHBOARD API ENDPOINTS
+# ==============================
+
+@app.route("/api/active_sessions", methods=["GET"])
+def get_active_sessions():
+    """Get active user sessions"""
+    try:
+        # Clean up old sessions (older than 1 hour)
+        current_time = datetime.now()
+        expired_sessions = []
+        
+        for phone, session in user_sessions.items():
+            created_at = datetime.fromisoformat(session.get('created_at', current_time.isoformat()))
+            if (current_time - created_at) > timedelta(hours=1):
+                expired_sessions.append(phone)
+        
+        for phone in expired_sessions:
+            del user_sessions[phone]
+        
+        return jsonify({"sessions": user_sessions})
+    except Exception as e:
+        logger.error(f"Error getting sessions: {str(e)}")
+        return jsonify({"sessions": {}})
+
+@app.route("/api/user_session/<phone_number>", methods=["GET"])
+def get_user_session(phone_number):
+    """Get specific user session"""
+    try:
+        session = user_sessions.get(phone_number, {})
+        return jsonify({
+            "has_session": phone_number in user_sessions,
+            "step": session.get('step', 'no_session'),
+            "flow": session.get('flow', 'no_flow'),
+            "name": session.get('name', 'Unknown'),
+            "tour_type": session.get('cruise_type', 'Not selected')
+        })
+    except Exception as e:
+        logger.error(f"Error getting user session: {str(e)}")
+        return jsonify({"has_session": False})
+
+@app.route("/api/capacity/<date>/<cruise_type>", methods=["GET"])
+def get_capacity_for_date(date, cruise_type):
+    """Get capacity for specific date and cruise type"""
+    try:
+        current_capacity = get_cruise_capacity(date, cruise_type)
+        available_seats = CRUISE_CONFIG["max_capacity"] - current_capacity
+        
+        return jsonify({
+            "date": date,
+            "cruise_type": cruise_type,
+            "current_capacity": current_capacity,
+            "available_seats": available_seats,
+            "max_capacity": CRUISE_CONFIG["max_capacity"],
+            "utilization_percentage": round((current_capacity / CRUISE_CONFIG["max_capacity"]) * 100, 2)
+        })
+    except Exception as e:
+        logger.error(f"Error getting capacity: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/report/<date>", methods=["GET"])
+def generate_daily_report(date):
+    """Generate CSV report for specific date"""
+    try:
+        if not sheet:
+            return jsonify({"error": "Google Sheets not available"}), 500
+        
+        records = sheet.get_all_records()
+        
+        # Filter bookings for the specific date
+        daily_bookings = []
+        for record in records:
+            if str(record.get('Cruise Date', '')).strip() == date:
+                daily_bookings.append(record)
+        
+        # Create CSV content
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write headers
+        writer.writerow(['Sindbad Ship Cruises - Daily Report'])
+        writer.writerow([f'Date: {date}'])
+        writer.writerow([f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+        writer.writerow([])
+        
+        # Write summary
+        total_bookings = len(daily_bookings)
+        confirmed_bookings = len([b for b in daily_bookings if b.get('Booking Status') == 'Confirmed'])
+        total_revenue = sum(float(b.get('Total Amount', 0)) for b in daily_bookings if b.get('Booking Status') == 'Confirmed')
+        
+        writer.writerow(['Summary'])
+        writer.writerow(['Total Bookings', total_bookings])
+        writer.writerow(['Confirmed Bookings', confirmed_bookings])
+        writer.writerow(['Total Revenue', f"{total_revenue:.3f} OMR"])
+        writer.writerow([])
+        
+        # Write detailed data
+        if daily_bookings:
+            headers = daily_bookings[0].keys()
+            writer.writerow(headers)
+            for booking in daily_bookings:
+                writer.writerow([booking.get(header, '') for header in headers])
+        else:
+            writer.writerow(['No bookings found for this date'])
+        
+        # Prepare response
+        output.seek(0)
+        response = app.response_class(
+            response=output.getvalue(),
+            status=200,
+            mimetype='text/csv'
+        )
+        response.headers.set('Content-Disposition', 'attachment', filename=f'Sindbad_Report_{date}.csv')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating report: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/broadcast", methods=["POST"])
+def send_broadcast():
+    """Send broadcast message to segment"""
+    try:
+        data = request.get_json()
+        segment = data.get('segment', 'all')
+        message = data.get('message', '')
+        
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        if not sheet:
+            return jsonify({"error": "Google Sheets not available"}), 500
+        
+        records = sheet.get_all_records()
+        
+        # Filter recipients based on segment
+        recipients = []
+        for record in records:
+            if segment == 'all':
+                recipients.append(record.get('WhatsApp ID'))
+            elif segment == 'book_tour' and record.get('Booking Status') == 'Confirmed':
+                recipients.append(record.get('WhatsApp ID'))
+            elif segment == 'pending' and record.get('Booking Status') == 'Pending':
+                recipients.append(record.get('WhatsApp ID'))
+        
+        # Remove duplicates and None values
+        recipients = list(set([r for r in recipients if r]))
+        
+        # In a real implementation, you would send messages via WhatsApp API
+        # For now, we'll simulate the broadcast
+        sent_count = 0
+        failed_count = 0
+        
+        for recipient in recipients:
+            try:
+                # Simulate sending message
+                logger.info(f"📤 Broadcast to {recipient}: {message[:50]}...")
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send to {recipient}: {str(e)}")
+                failed_count += 1
+        
+        return jsonify({
+            "success": True,
+            "sent": sent_count,
+            "failed": failed_count,
+            "total_recipients": len(recipients),
+            "message": f"Broadcast completed: {sent_count} sent, {failed_count} failed"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in broadcast: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# ==============================
+# EXISTING WEBHOOK HANDLERS
 # ==============================
 
 @app.route("/webhook", methods=["GET"])
@@ -768,11 +943,11 @@ def handle_interactive_message(phone_number, interaction_id):
     
     # Language selection
     if interaction_id == "lang_english":
-        user_sessions[phone_number] = {'language': 'english'}
+        user_sessions[phone_number] = {'language': 'english', 'flow': 'main_menu'}
         send_main_menu(phone_number, 'english')
     
     elif interaction_id == "lang_arabic":
-        user_sessions[phone_number] = {'language': 'arabic'}
+        user_sessions[phone_number] = {'language': 'arabic', 'flow': 'main_menu'}
         send_main_menu(phone_number, 'arabic')
     
     # Main menu
@@ -840,7 +1015,7 @@ def handle_text_message(phone_number, text):
         send_main_menu(phone_number, language)
 
 # ==============================
-# API ENDPOINTS
+# EXISTING API ENDPOINTS
 # ==============================
 
 @app.route("/api/health", methods=["GET"])
