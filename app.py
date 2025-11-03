@@ -23,7 +23,9 @@ CORS(app, origins=[
     "http://localhost:3000",
     "http://localhost:5000", 
     "https://sindbaddashboard.netlify.app",
-    "https://*.netlify.app"
+    "https://*.netlify.app",
+    "http://localhost:8000",
+    "*"  # For development
 ])
 
 # ==============================
@@ -96,6 +98,11 @@ except Exception as e:
 
 # Session management
 user_sessions = {}
+
+# ==============================
+# CHAT MESSAGE STORAGE
+# ==============================
+chat_messages = {}
 
 # ==============================
 # CRUISE CONFIGURATION
@@ -435,6 +442,70 @@ def save_booking_to_sheets(booking_data, language, payment_status="Paid", paymen
         
     except Exception as e:
         logger.error(f"❌ Failed to save booking: {str(e)}")
+        return False
+
+# ==============================
+# CHAT MESSAGE FUNCTIONS
+# ==============================
+
+def store_chat_message(phone_number, message, sender, message_type="text"):
+    """Store chat message in memory"""
+    try:
+        if phone_number not in chat_messages:
+            chat_messages[phone_number] = []
+        
+        message_data = {
+            "id": len(chat_messages[phone_number]) + 1,
+            "message": message,
+            "sender": sender,  # "user" or "admin"
+            "timestamp": datetime.now().isoformat(),
+            "type": message_type
+        }
+        
+        chat_messages[phone_number].append(message_data)
+        
+        # Keep only last 100 messages per user to prevent memory issues
+        if len(chat_messages[phone_number]) > 100:
+            chat_messages[phone_number] = chat_messages[phone_number][-100:]
+        
+        logger.info(f"💬 Stored {sender} message for {phone_number}: {message[:50]}...")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error storing chat message: {str(e)}")
+        return False
+
+def get_chat_history(phone_number, limit=50):
+    """Get chat history for a user"""
+    try:
+        if phone_number not in chat_messages:
+            return []
+        
+        messages = chat_messages[phone_number][-limit:]
+        return messages
+        
+    except Exception as e:
+        logger.error(f"Error getting chat history: {str(e)}")
+        return []
+
+def send_admin_chat_message(phone_number, message):
+    """Send message from admin to user via WhatsApp and store it"""
+    try:
+        # Store the admin message
+        store_chat_message(phone_number, message, "admin")
+        
+        # Send via WhatsApp API
+        success = send_whatsapp_message(phone_number, message)
+        
+        if success:
+            logger.info(f"✅ Admin message sent to {phone_number}")
+            return True
+        else:
+            logger.error(f"❌ Failed to send admin message to {phone_number}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending admin chat message: {str(e)}")
         return False
 
 # ==============================
@@ -800,6 +871,21 @@ def home():
         "version": "1.0"
     })
 
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    """Health check endpoint"""
+    status = {
+        "status": "Sindbad Ship Cruises WhatsApp API 🚢",
+        "timestamp": datetime.now().isoformat(),
+        "whatsapp_configured": bool(WHATSAPP_TOKEN and WHATSAPP_PHONE_ID),
+        "sheets_available": sheet is not None,
+        "active_sessions": len(user_sessions),
+        "active_chats": len(chat_messages),
+        "version": "4.0 - SIMULATION MODE",
+        "payment_mode": "SIMULATION - Test payments only"
+    }
+    return jsonify(status)
+
 @app.route("/api/active_sessions", methods=["GET"])
 def get_active_sessions():
     """Get active user sessions"""
@@ -971,7 +1057,141 @@ def send_broadcast():
         return jsonify({"error": str(e)}), 500
 
 # ==============================
-# EXISTING WEBHOOK HANDLERS
+# CHAT API ENDPOINTS
+# ==============================
+
+@app.route("/api/chat/history/<phone_number>", methods=["GET"])
+def get_chat_history_endpoint(phone_number):
+    """Get chat history for a specific user"""
+    try:
+        messages = get_chat_history(phone_number)
+        return jsonify({
+            "success": True,
+            "phone_number": phone_number,
+            "messages": messages,
+            "total_messages": len(messages)
+        })
+    except Exception as e:
+        logger.error(f"Error getting chat history: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/chat/send", methods=["POST"])
+def send_chat_message_endpoint():
+    """Send a message from admin to user"""
+    try:
+        data = request.get_json()
+        phone_number = data.get('phone_number')
+        message = data.get('message')
+        
+        if not phone_number or not message:
+            return jsonify({"success": False, "error": "Phone number and message are required"}), 400
+        
+        # Send the message via WhatsApp
+        success = send_admin_chat_message(phone_number, message)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Message sent successfully",
+                "phone_number": phone_number
+            })
+        else:
+            return jsonify({"success": False, "error": "Failed to send message via WhatsApp"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error sending chat message: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/chat/users", methods=["GET"])
+def get_chat_users():
+    """Get list of users with chat history"""
+    try:
+        users = []
+        for phone_number, messages in chat_messages.items():
+            if messages:
+                last_message = messages[-1]
+                users.append({
+                    "phone_number": phone_number,
+                    "last_message": last_message["message"],
+                    "last_message_time": last_message["timestamp"],
+                    "last_sender": last_message["sender"],
+                    "total_messages": len(messages)
+                })
+        
+        # Sort by last message time (newest first)
+        users.sort(key=lambda x: x["last_message_time"], reverse=True)
+        
+        return jsonify({
+            "success": True,
+            "users": users,
+            "total_users": len(users)
+        })
+    except Exception as e:
+        logger.error(f"Error getting chat users: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ==============================
+# BOOKINGS API ENDPOINTS
+# ==============================
+
+@app.route("/api/bookings", methods=["GET"])
+def get_all_bookings():
+    """Get all bookings"""
+    try:
+        if not sheet:
+            return jsonify({"error": "Sheets not available"}), 500
+        
+        records = sheet.get_all_records()
+        return jsonify(records)
+    except Exception as e:
+        logger.error(f"Error getting bookings: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/sessions", methods=["GET"])
+def get_sessions():
+    """Get active sessions"""
+    return jsonify({"sessions": user_sessions})
+
+@app.route("/api/debug/sheets", methods=["GET"])
+def debug_sheets():
+    """Debug Google Sheets connection"""
+    try:
+        if not sheet:
+            return jsonify({"error": "Sheet not available"}), 500
+        
+        # Test read
+        records = sheet.get_all_records()
+        
+        # Test write
+        test_id = f"TEST_{int(time.time())}"
+        test_data = [
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            test_id,
+            "Test User",
+            "91234567",
+            "96812345678",
+            "23/11/2024",  # Now in DD/MM/YYYY format
+            "9:00 AM - 10:30 AM",
+            "Morning Cruise",
+            "2", "1", "0", "3", "7.500",
+            'Paid', 'Simulated', 'TEST_123', 'English', 'Confirmed', 'Test Record'
+        ]
+        
+        sheet.append_row(test_data)
+        
+        return jsonify({
+            "status": "success",
+            "records_count": len(records),
+            "test_id": test_id,
+            "sheet_name": SHEET_NAME
+        })
+        
+    except Exception as e:
+        logger.error(f"Debug sheets error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# ==============================
+# WEBHOOK HANDLERS
 # ==============================
 
 @app.route("/webhook", methods=["GET"])
@@ -1003,6 +1223,12 @@ def handle_webhook():
         
         message = messages[0]
         phone_number = message["from"]
+        
+        # Store user message in chat history
+        if "text" in message:
+            text = message["text"]["body"].strip()
+            store_chat_message(phone_number, text, "user")
+            logger.info(f"💬 User message stored: {phone_number}: {text[:50]}...")
         
         # Handle interactive messages
         if "interactive" in message:
@@ -1101,6 +1327,9 @@ def handle_text_message(phone_number, text):
     session = user_sessions.get(phone_number, {})
     language = session.get('language', 'english')
     
+    # Store user message
+    store_chat_message(phone_number, text, "user")
+    
     # New user - send language menu
     if not session and text.lower() in ["hi", "hello", "hey", "مرحبا", "اهلا", "السلام"]:
         send_language_menu(phone_number)
@@ -1112,80 +1341,6 @@ def handle_text_message(phone_number, text):
     else:
         # Fallback to main menu
         send_main_menu(phone_number, language)
-
-# ==============================
-# EXISTING API ENDPOINTS
-# ==============================
-
-@app.route("/api/health", methods=["GET"])
-def health_check():
-    """Health check endpoint"""
-    status = {
-        "status": "Sindbad Ship Cruises WhatsApp API 🚢",
-        "timestamp": datetime.now().isoformat(),
-        "whatsapp_configured": bool(WHATSAPP_TOKEN and WHATSAPP_PHONE_ID),
-        "sheets_available": sheet is not None,
-        "active_sessions": len(user_sessions),
-        "version": "4.0 - SIMULATION MODE",
-        "payment_mode": "SIMULATION - Test payments only"
-    }
-    return jsonify(status)
-
-@app.route("/api/debug/sheets", methods=["GET"])
-def debug_sheets():
-    """Debug Google Sheets connection"""
-    try:
-        if not sheet:
-            return jsonify({"error": "Sheet not available"}), 500
-        
-        # Test read
-        records = sheet.get_all_records()
-        
-        # Test write
-        test_id = f"TEST_{int(time.time())}"
-        test_data = [
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            test_id,
-            "Test User",
-            "91234567",
-            "96812345678",
-            "23/11/2024",  # Now in DD/MM/YYYY format
-            "9:00 AM - 10:30 AM",
-            "Morning Cruise",
-            "2", "1", "0", "3", "7.500",
-            'Paid', 'Simulated', 'TEST_123', 'English', 'Confirmed', 'Test Record'
-        ]
-        
-        sheet.append_row(test_data)
-        
-        return jsonify({
-            "status": "success",
-            "records_count": len(records),
-            "test_id": test_id,
-            "sheet_name": SHEET_NAME
-        })
-        
-    except Exception as e:
-        logger.error(f"Debug sheets error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/bookings", methods=["GET"])
-def get_all_bookings():
-    """Get all bookings"""
-    try:
-        if not sheet:
-            return jsonify({"error": "Sheets not available"}), 500
-        
-        records = sheet.get_all_records()
-        return jsonify(records)
-    except Exception as e:
-        logger.error(f"Error getting bookings: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/sessions", methods=["GET"])
-def get_sessions():
-    """Get active sessions"""
-    return jsonify({"sessions": user_sessions})
 
 # ==============================
 # CORS SETUP
@@ -1207,5 +1362,6 @@ if __name__ == "__main__":
     logger.info(f"🚀 Starting Sindbad Ship Cruises WhatsApp Bot on port {port}")
     logger.info(f"💳 PAYMENT MODE: SIMULATION")
     logger.info(f"📊 Google Sheets: {'Connected' if sheet else 'Not Available'}")
+    logger.info(f"💬 Chat system: ENABLED")
     
     app.run(host="0.0.0.0", port=port, debug=False)
